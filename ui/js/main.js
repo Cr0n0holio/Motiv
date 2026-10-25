@@ -197,7 +197,43 @@ async function saveProject(saveAs) {
     emit('doc:replaced');
     if (isTauri) invoke('autosave_clear').catch(() => {});
     toast('Sparat', 'ok');
-  } catch (e) { toast(`Kunde inte spara: ${e.message || e}`, 'error'); }
+    return true;
+  } catch (e) { toast(`Kunde inte spara: ${e.message || e}`, 'error'); return false; }
+}
+
+// ---------------- Stängning ----------------
+function askSaveBeforeClose() {
+  return new Promise((resolve) => {
+    let answer = 'cancel';
+    modal({
+      title: 'Spara ändringarna?',
+      body: h('p', null, `Vill du spara ändringarna i "${state.fileName}" innan du stänger?`),
+      onClose: () => resolve(answer),
+      actions: [
+        { label: 'Avbryt' },
+        { label: 'Stäng utan att spara', danger: true, onClick: () => { answer = 'discard'; } },
+        { label: 'Spara', primary: true, onClick: () => { answer = 'save'; } },
+      ],
+    });
+  });
+}
+
+/** Skrivbordsappen: fråga innan fönstret stängs med osparade ändringar. */
+function setupCloseGuard() {
+  const win = window.__TAURI__?.window?.getCurrentWindow?.();
+  if (!win?.onCloseRequested) return;
+  let closing = false;
+  win.onCloseRequested(async (e) => {
+    finishTextEdit();
+    if (closing || !state.dirty || !state.doc.elements.length) return;
+    e.preventDefault();
+    const choice = await askSaveBeforeClose();
+    if (choice === 'cancel') return;
+    if (choice === 'save' && !(await saveProject(false))) return;
+    if (choice === 'discard') await invoke('autosave_clear').catch(() => {});
+    closing = true;
+    await win.destroy();
+  });
 }
 
 function about() {
@@ -361,6 +397,7 @@ async function boot() {
   on('fonts', () => { A.relayoutAllText(); requestRender(); });
   on('layout', () => requestAnimationFrame(() => window.dispatchEvent(new Event('resize'))));
   window.addEventListener('beforeunload', (e) => { if (state.dirty && !isTauri) { e.preventDefault(); e.returnValue = ''; } });
+  if (isTauri) setupCloseGuard();
 
   // Startdokument: A4 stående med en välkomsttext
   const d = newDoc(2480, 3508, 300);

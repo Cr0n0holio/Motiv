@@ -7,6 +7,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use image::{imageops::FilterType, DynamicImage, GrayImage, ImageFormat, Luma, RgbaImage};
 use serde::Serialize;
 use std::io::{Cursor, Write};
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 use tract_onnx::prelude::*;
 
@@ -158,7 +159,35 @@ pub async fn bg_remove(app: AppHandle, id: String, image: String) -> Result<Stri
         .map_err(err)?
 }
 
-fn run_model(def: &ModelDef, path: &std::path::Path, image_b64: &str) -> Result<String, String> {
+type Runnable = TypedRunnableModel<TypedModel>;
+
+/// Senast använda modellen, färdigoptimerad. Att läsa och optimera en modell
+/// tar flera sekunder (IS-Net är 170 MB), så den sparas mellan körningarna.
+/// Bara en hålls i minnet åt gången för att inte binda upp hundratals MB.
+static MODEL_CACHE: Mutex<Option<(&'static str, Arc<Runnable>)>> = Mutex::new(None);
+
+fn cached_model(def: &'static ModelDef, path: &std::path::Path) -> Result<Arc<Runnable>, String> {
+    if let Some((id, m)) = MODEL_CACHE.lock().map_err(err)?.as_ref() {
+        if *id == def.id {
+            return Ok(m.clone());
+        }
+    }
+    let s = def.input;
+    let model = tract_onnx::onnx()
+        .model_for_path(path)
+        .map_err(|e| format!("Kunde inte läsa modellen: {e}"))?
+        .with_input_fact(0, f32::fact([1, 3, s, s]).into())
+        .map_err(err)?
+        .into_optimized()
+        .map_err(|e| format!("Modellen stöds inte: {e}"))?
+        .into_runnable()
+        .map_err(err)?;
+    let model = Arc::new(model);
+    *MODEL_CACHE.lock().map_err(err)? = Some((def.id, model.clone()));
+    Ok(model)
+}
+
+fn run_model(def: &'static ModelDef, path: &std::path::Path, image_b64: &str) -> Result<String, String> {
     let bytes = STANDARD.decode(strip_data_url(image_b64)).map_err(err)?;
     let img = image::load_from_memory(&bytes).map_err(|e| format!("Kunde inte läsa bilden: {e}"))?;
     let (ow, oh) = (img.width(), img.height());
@@ -178,16 +207,7 @@ fn run_model(def: &ModelDef, path: &std::path::Path, image_b64: &str) -> Result<
     })
     .into();
 
-    let model = tract_onnx::onnx()
-        .model_for_path(path)
-        .map_err(|e| format!("Kunde inte läsa modellen: {e}"))?
-        .with_input_fact(0, f32::fact([1, 3, s, s]).into())
-        .map_err(err)?
-        .into_optimized()
-        .map_err(|e| format!("Modellen stöds inte: {e}"))?
-        .into_runnable()
-        .map_err(err)?;
-
+    let model = cached_model(def, path)?;
     let result = model.run(tvec!(input.into())).map_err(|e| format!("Körningen misslyckades: {e}"))?;
     let out = result[0].to_array_view::<f32>().map_err(err)?;
     let shape = out.shape().to_vec();

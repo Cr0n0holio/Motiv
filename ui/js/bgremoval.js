@@ -1,7 +1,7 @@
 // Dialog för AI-bakgrundsborttagning (körs i Rust med tract).
 import { h, fmtBytes } from './util.js';
 import { isTauri, invoke, listen } from './bridge.js';
-import { state, emit, commit, getById } from './state.js';
+import { emit, commit, getById } from './state.js';
 import { modal, toast } from './dialogs.js';
 import { addAsset } from './actions.js';
 import { ensureImage, clearImageCaches } from './images.js';
@@ -60,7 +60,7 @@ export async function openBgRemoval(el) {
           ptext.textContent = 'Analyserar bilden…';
           btn.textContent = 'Arbetar…';
           const t0 = performance.now();
-          const maskB64 = await invoke('bg_remove', { id: m.id, image: state.doc.assets[el.assetId] });
+          const maskB64 = await invoke('bg_remove', { id: m.id, image: await orientedImage(el.assetId) });
           const maskId = await addAsset(`data:image/png;base64,${maskB64}`);
           await ensureImage(maskId);
           const cur = getById(el.id) || el;
@@ -75,6 +75,24 @@ export async function openBgRemoval(el) {
     ],
   });
   return dlg;
+}
+
+/**
+ * Bilden som webbvyn visar den, som PNG. Webbvyn vrider foton efter
+ * EXIF-orienteringen men Rust-sidan gör det inte, så utan det här hamnar
+ * masken fel på mobilfoton tagna på höjden. Stora bilder skalas ned –
+ * modellen arbetar ändå i 320–1024 px.
+ */
+const MAX_SIDE = 4096;
+async function orientedImage(assetId) {
+  const img = await ensureImage(assetId);
+  if (!img) throw new Error('Kunde inte läsa bilden');
+  const k = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(img.naturalWidth * k));
+  c.height = Math.max(1, Math.round(img.naturalHeight * k));
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL('image/png');
 }
 
 export function restoreBackground(el) {
