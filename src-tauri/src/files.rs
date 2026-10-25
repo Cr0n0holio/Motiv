@@ -89,7 +89,7 @@ pub async fn read_binary_file(path: String) -> Result<BinaryFile, String> {
     Ok(BinaryFile { name, data: STANDARD.encode(bytes) })
 }
 
-const AUTOSAVE: &str = "autosave.ediholio";
+const AUTOSAVE: &str = "autosave.motiv";
 
 #[tauri::command]
 pub async fn autosave_write(app: AppHandle, contents: String) -> Result<(), String> {

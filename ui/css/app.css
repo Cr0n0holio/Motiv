@@ -1,4 +1,4 @@
-/* Ediholio – gränssnitt */
+/* Motiv – gränssnitt */
 :root {
   --bg: #121318;
   --chrome: #18191f;
@@ -158,6 +158,8 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
 .spacer { flex: 1; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+/* Knappar bredvid fält med etikett ska linjera med fältet, inte fylla hela raden */
+.grid2 > .btn, .grid3 > .btn { align-self: end; height: 32px; padding-top: 0; padding-bottom: 0; }
 .btn-grid { display: grid; gap: 6px; }
 .btn-grid.two { grid-template-columns: 1fr 1fr; }
 .btn-grid.four { grid-template-columns: repeat(4, 1fr); }

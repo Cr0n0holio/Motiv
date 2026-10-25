@@ -6,11 +6,30 @@ pub fn err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
-/// Appens datamapp (t.ex. %APPDATA%\se.micke.ediholio), skapas vid behov.
+/// Appens datamapp (t.ex. %APPDATA%\se.micke.motiv), skapas vid behov.
 pub fn app_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().app_data_dir().map_err(err)?;
     std::fs::create_dir_all(&dir).map_err(err)?;
     Ok(dir)
+}
+
+/// Appen hette tidigare Ediholio. Flyttar den gamla datamappen (nedladdade
+/// fonter, AI-modeller, autosparning) till det nya namnet vid första start.
+pub fn migrate_legacy_data(app: &AppHandle) {
+    let Ok(new) = app.path().app_data_dir() else { return };
+    let Some(old) = new.parent().map(|p| p.join("se.micke.ediholio")) else { return };
+    if !old.is_dir() {
+        return;
+    }
+    // En tom ny mapp får ersättas, men aldrig en som redan har innehåll
+    let new_has_content = std::fs::read_dir(&new).map(|mut d| d.next().is_some()).unwrap_or(false);
+    if new_has_content {
+        return;
+    }
+    let _ = std::fs::remove_dir(&new);
+    if std::fs::rename(&old, &new).is_ok() {
+        let _ = std::fs::rename(new.join("autosave.ediholio"), new.join("autosave.motiv"));
+    }
 }
 
 /// En undermapp i appens datamapp, skapas vid behov.

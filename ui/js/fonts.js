@@ -38,7 +38,7 @@ export const fontState = {
   recent: [],
 };
 
-try { fontState.recent = JSON.parse(localStorage.getItem('ediholio.recentFonts') || '[]'); } catch { /* ignore */ }
+try { fontState.recent = JSON.parse(localStorage.getItem('motiv.recentFonts') || '[]'); } catch { /* ignore */ }
 
 let changeTimer = null;
 function fontsChanged() {
@@ -132,7 +132,7 @@ export async function ensureDocFonts(els) {
 
 export function pushRecentFont(family) {
   fontState.recent = [family, ...fontState.recent.filter((f) => f !== family)].slice(0, 8);
-  try { localStorage.setItem('ediholio.recentFonts', JSON.stringify(fontState.recent)); } catch { /* ignore */ }
+  try { localStorage.setItem('motiv.recentFonts', JSON.stringify(fontState.recent)); } catch { /* ignore */ }
 }
 
 export async function addCustomFonts() {

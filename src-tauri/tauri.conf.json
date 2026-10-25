@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Ediholio",
+  "productName": "Motiv",
   "version": "0.1.0",
-  "identifier": "se.micke.ediholio",
+  "identifier": "se.micke.motiv",
   "build": {
     "frontendDist": "../ui"
   },
@@ -11,7 +11,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Ediholio",
+        "title": "Motiv",
         "width": 1480,
         "height": 920,
         "minWidth": 1024,

@@ -7,7 +7,7 @@ import { addAsset } from './actions.js';
 import { ensureImage, clearImageCaches } from './images.js';
 
 let chosen = null;
-try { chosen = localStorage.getItem('ediholio.bgModel'); } catch { /* ignore */ }
+try { chosen = localStorage.getItem('motiv.bgModel'); } catch { /* ignore */ }
 
 export async function openBgRemoval(el) {
   if (!el || el.type !== 'image') return;
@@ -42,7 +42,7 @@ export async function openBgRemoval(el) {
       { label: 'Avbryt' },
       {
         label: 'Ta bort bakgrund', primary: true, onClick: async (btn) => {
-          try { localStorage.setItem('ediholio.bgModel', chosen); } catch { /* ignore */ }
+          try { localStorage.setItem('motiv.bgModel', chosen); } catch { /* ignore */ }
           const m = models.find((x) => x.id === chosen);
           const bar = progress.querySelector('.bar'), ptext = progress.querySelector('.ptext');
           progress.classList.remove('hidden');

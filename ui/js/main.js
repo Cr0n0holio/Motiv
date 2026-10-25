@@ -1,4 +1,4 @@
-// Ediholio – start och sammankoppling.
+// Motiv – start och sammankoppling.
 import {
   state, on, emit, commit, undo, redo, canUndo, canRedo, select, selected, single, newDoc, loadDoc, serializeDoc, parseDoc, getById,
 } from './state.js';
@@ -36,7 +36,7 @@ function buildTopbar() {
   const exportBtn = h('button', { class: 'btn primary', onclick: openExportDialog }, icon('download'), 'Exportera');
 
   bar.append(
-    h('div', { class: 'brand' }, h('span', { class: 'logo' }), h('span', { class: 'brand-name' }, 'Ediholio')),
+    h('div', { class: 'brand' }, h('span', { class: 'logo' }), h('span', { class: 'brand-name' }, 'Motiv')),
     fileBtn, editBtn,
     h('span', { class: 'sep' }),
     undoBtn, redoBtn,
@@ -55,7 +55,7 @@ function buildTopbar() {
     ['Ladda upp bilder…', 'Ctrl+I', uploadImages],
     ['Exportera…', 'Ctrl+E', openExportDialog],
     null,
-    ['Om Ediholio', '', about],
+    ['Om Motiv', '', about],
   ]));
   editBtn.addEventListener('click', () => showMenu(editBtn, [
     ['Ångra', 'Ctrl+Z', undo, !canUndo()],
@@ -79,7 +79,7 @@ function buildTopbar() {
 }
 
 function updateTitle() {
-  const t = `${state.dirty ? '• ' : ''}${state.fileName} – Ediholio`;
+  const t = `${state.dirty ? '• ' : ''}${state.fileName} – Motiv`;
   document.title = t;
   if (isTauri) { try { window.__TAURI__.window?.getCurrentWindow?.().setTitle(t).catch(() => {}); } catch { /* ignore */ } }
 }
@@ -149,7 +149,10 @@ function buildZoomBar() {
 }
 
 // ---------------- Fil ----------------
-const FILTER = [{ name: 'Ediholio-projekt', extensions: ['ediholio'] }];
+const FILTER = [{ name: 'Motiv-projekt', extensions: ['motiv'] }];
+// Gamla projekt från när appen hette Ediholio går fortfarande att öppna
+const OPEN_FILTER = [{ name: 'Motiv-projekt', extensions: ['motiv', 'ediholio'] }];
+const PROJECT_EXT = /\.(motiv|ediholio)$/i;
 
 async function confirmDiscard() {
   if (!state.dirty || !state.doc.elements.length) return true;
@@ -167,7 +170,7 @@ async function newDesign() {
 async function openProject() {
   if (!(await confirmDiscard())) return;
   try {
-    const f = await openText(FILTER);
+    const f = await openText(OPEN_FILTER);
     if (!f) return;
     await loadProjectText(f.text, f.name, f.path);
   } catch (e) { toast(`Kunde inte öppna filen: ${e.message || e}`, 'error'); }
@@ -176,7 +179,7 @@ async function openProject() {
 async function loadProjectText(text, name, path) {
   const d = parseDoc(text);
   clearImageCaches();
-  loadDoc(d, { fileName: name.replace(/\.ediholio$/i, ''), filePath: path });
+  loadDoc(d, { fileName: name.replace(PROJECT_EXT, ''), filePath: path });
   await ensureAllImages();
   await ensureDocFonts(d.elements);
   A.relayoutAllText();
@@ -188,10 +191,10 @@ async function saveProject(saveAs) {
   finishTextEdit();
   try {
     const text = serializeDoc();
-    const path = await saveText(text, `${state.fileName}.ediholio`, FILTER, saveAs ? null : state.filePath);
+    const path = await saveText(text, `${state.fileName}.motiv`, FILTER, saveAs ? null : state.filePath);
     if (!path) return;
     state.filePath = isTauri ? path : null;
-    state.fileName = path.split(/[\\/]/).pop().replace(/\.ediholio$/i, '');
+    state.fileName = path.split(/[\\/]/).pop().replace(PROJECT_EXT, '');
     state.dirty = false;
     emit('dirty');
     emit('doc:replaced');
@@ -238,9 +241,9 @@ function setupCloseGuard() {
 
 function about() {
   modal({
-    title: 'Om Ediholio',
+    title: 'Om Motiv',
     body: h('div', null,
-      h('p', null, 'Ediholio är en Canva-inspirerad editor för posters och bilder, byggd med Rust (Tauri) och ett webbgränssnitt.'),
+      h('p', null, 'Motiv är en Canva-inspirerad editor för posters och bilder, byggd med Rust (Tauri) och ett webbgränssnitt.'),
       h('p', { class: 'muted small' }, isTauri ? 'Skrivbordsläge: fonter, bakgrundsborttagning och PDF hanteras av Rust.' : 'Webbläsarläge: vissa funktioner (PDF, bakgrundsborttagning, systemfonter) kräver skrivbordsappen.'),
     ),
     actions: [{ label: 'Stäng', primary: true }],
@@ -253,13 +256,13 @@ const autosave = debounce(async () => {
   const text = serializeDoc();
   try {
     if (isTauri) await invoke('autosave_write', { contents: JSON.stringify({ name: state.fileName, path: state.filePath, data: text }) });
-    else localStorage.setItem('ediholio.autosave', JSON.stringify({ name: state.fileName, path: null, data: text }));
+    else localStorage.setItem('motiv.autosave', JSON.stringify({ name: state.fileName, path: null, data: text }));
   } catch { /* t.ex. för stort för localStorage */ }
 }, 4000);
 
 async function offerRestore() {
   let raw = null;
-  try { raw = isTauri ? await invoke('autosave_read') : localStorage.getItem('ediholio.autosave'); } catch { /* ignore */ }
+  try { raw = isTauri ? await invoke('autosave_read') : localStorage.getItem('motiv.autosave'); } catch { /* ignore */ }
   if (!raw) return;
   let o;
   try { o = JSON.parse(raw); } catch { return; }
@@ -357,9 +360,9 @@ function setupDrop() {
     depth = 0; overlay.classList.remove('on');
     const inStage = stage.contains(e.target) || e.target === overlay;
     const at = inStage ? screenToDocFromClient(e.clientX, e.clientY) : null;
-    const assetId = e.dataTransfer.getData('application/x-ediholio-asset');
+    const assetId = e.dataTransfer.getData('application/x-motiv-asset');
     if (assetId && state.doc.assets[assetId]) { await A.addImageFromDataURL(state.doc.assets[assetId], { at }); return; }
-    const shape = e.dataTransfer.getData('application/x-ediholio-shape');
+    const shape = e.dataTransfer.getData('application/x-motiv-shape');
     if (shape) {
       const el = A.addShape(shape === 'dashed' || shape === 'dotted' ? 'line' : shape);
       if (shape === 'dashed' || shape === 'dotted') el.stroke.dash = shape;
@@ -369,7 +372,7 @@ function setupDrop() {
     }
     const files = [...e.dataTransfer.files];
     for (const f of files) {
-      if (f.name.toLowerCase().endsWith('.ediholio')) {
+      if (PROJECT_EXT.test(f.name)) {
         if (await confirmDiscard()) await loadProjectText(await f.text(), f.name, null);
         return;
       }

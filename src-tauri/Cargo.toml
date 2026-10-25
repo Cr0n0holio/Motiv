@@ -1,7 +1,7 @@
 [package]
-name = "ediholio"
+name = "motiv"
 version = "0.1.0"
-description = "Ediholio – en Canva-inspirerad editor för posters och bilder"
+description = "Motiv – en Canva-inspirerad editor för posters och bilder"
 authors = ["Micke"]
 edition = "2021"
 rust-version = "1.77"

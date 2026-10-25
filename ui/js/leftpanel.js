@@ -236,7 +236,7 @@ builders.elements = () => {
   const item = (k, add) => {
     const b = h('button', { class: 'shape-item', title: k, html: icon(k), onclick: add });
     b.draggable = true;
-    b.addEventListener('dragstart', (e) => e.dataTransfer.setData('application/x-ediholio-shape', k));
+    b.addEventListener('dragstart', (e) => e.dataTransfer.setData('application/x-motiv-shape', k));
     return b;
   };
   panel.append(
@@ -274,7 +274,7 @@ builders.uploads = () => {
   const grid = h('div', { class: 'asset-grid' });
   for (const [id, url] of imageAssets()) {
     const im = h('img', { src: url, draggable: true, loading: 'lazy' });
-    im.addEventListener('dragstart', (e) => e.dataTransfer.setData('application/x-ediholio-asset', id));
+    im.addEventListener('dragstart', (e) => e.dataTransfer.setData('application/x-motiv-asset', id));
     grid.append(h('button', {
       class: 'asset', title: 'Klicka för att lägga till', onclick: async () => {
         await A.addImageFromDataURL(url);
@@ -397,7 +397,7 @@ const TEMPLATES = [
         place(T({ text: 'SOMMAR\nFESTIVAL', fontFamily: 'Bebas Neue', fontWeight: 400, fontSize: 520, lineHeight: 0.9, width: 2200, fill: { type: 'solid', color: '#fff7fe' }, glow: { enabled: true, color: '#ff2bd6', blur: 160 }, letterSpacing: 30 }), 1240, 1100),
         place(T({ text: 'LIVE PÅ STORA SCENEN', fontFamily: 'Montserrat', fontWeight: 800, fontSize: 92, width: 2000, letterSpacing: 300, curve: { mode: 'arc', amount: 18 }, fill: { type: 'solid', color: '#fde68a' } }), 1240, 470),
         place(T({ text: '12–14 JULI · GÖTEBORG', fontFamily: 'Montserrat', fontWeight: 700, fontSize: 110, width: 2200, letterSpacing: 120, fill: { type: 'solid', color: '#1e1b4b' }, background: { enabled: true, color: '#fde68a', padding: 0.35, radius: 0.5 } }), 1240, 2900),
-        place(T({ text: 'Biljetter på ediholio.se', fontFamily: 'Poppins', fontWeight: 500, fontSize: 70, width: 2000, fill: { type: 'solid', color: '#ffffffcc' } }), 1240, 3250),
+        place(T({ text: 'Biljetter på exempel.se', fontFamily: 'Poppins', fontWeight: 500, fontSize: 70, width: 2000, fill: { type: 'solid', color: '#ffffffcc' } }), 1240, 3250),
       );
       return d;
     },
@@ -586,7 +586,7 @@ const TEMPLATES = [
         place(T({ text: 'SPRING', fontFamily: 'Oswald', fontWeight: 700, italic: true, fontSize: 700, width: 2400, fill: solid('#ffffff') }), 1240, 950),
         place(T({ text: 'MILEN', fontFamily: 'Oswald', fontWeight: 700, italic: true, fontSize: 520, width: 2400, fill: { type: 'none' }, stroke: { enabled: true, color: '#f97316', width: 8 } }), 1240, 1620),
         place(T({ text: 'Söndag 7 sep · Start 10.00 · Slottsparken', fontFamily: 'Montserrat', fontWeight: 700, fontSize: 80, width: 2300, letterSpacing: 60, fill: solid('#ffffff') }), 1240, 3060),
-        place(T({ text: 'Anmälan: ediholio.se/milen', fontFamily: 'Montserrat', fontWeight: 500, fontSize: 64, width: 2300, fill: solid('#facc15') }), 1240, 3270),
+        place(T({ text: 'Anmälan: exempel.se/milen', fontFamily: 'Montserrat', fontWeight: 500, fontSize: 64, width: 2300, fill: solid('#facc15') }), 1240, 3270),
       );
       return d;
     },

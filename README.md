@@ -1,4 +1,4 @@
-# Ediholio
+# Motiv
 
 En Canva-inspirerad editor för posters och bildredigering. Kärnan är skriven i
 **Rust (Tauri 2)** och själva editorn (canvas och paneler) i ren JavaScript,
@@ -54,7 +54,7 @@ Tauri CLI en gång och lägger installeraren i `src-tauri\target\release\bundle\
 - **PDF för tryck** med vektortext, utfall (bleed) och skärmärken, eller
   rastrerad PDF för exakt utseende
 - SVG med inbäddade fonter
-- Projektfiler (`.ediholio`) med allt redigerbart, plus autosparning
+- Projektfiler (`.motiv`; äldre `.ediholio`-filer går också att öppna) med allt redigerbart, plus autosparning
 
 ## Kortkommandon
 
@@ -105,7 +105,7 @@ src-tauri/             Rust
 ```
 
 Appens data (nedladdade fonter, AI-modeller, autosparning) ligger i
-`%APPDATA%\se.micke.ediholio`.
+`%APPDATA%\se.micke.motiv`. Data från när appen hette Ediholio flyttas dit automatiskt vid första start.
 
 ## Utveckla gränssnittet i webbläsaren
 

@@ -10,10 +10,10 @@ import { isTauri, invoke, saveBlob } from './bridge.js';
 import { finishTextEdit, finishCrop } from './editor.js';
 
 let last = { format: 'png', scale: 1, quality: 92, transparent: false, bleed: 3, marks: true, raster: false };
-try { Object.assign(last, JSON.parse(localStorage.getItem('ediholio.export') || '{}')); } catch { /* ignore */ }
+try { Object.assign(last, JSON.parse(localStorage.getItem('motiv.export') || '{}')); } catch { /* ignore */ }
 
 const MAX_SIDE = 16000;
-const safeName = () => (state.fileName || 'design').replace(/\.ediholio$/i, '').replace(/[\\/:*?"<>|]+/g, '_');
+const safeName = () => (state.fileName || 'design').replace(/\.(motiv|ediholio)$/i, '').replace(/[\\/:*?"<>|]+/g, '_');
 
 /** Renderar dokumentet (ev. med utfall) till en canvas i given skala. */
 export async function renderExportCanvas(scale, { transparent = false, bleedPx = 0, background = null } = {}) {
@@ -94,7 +94,7 @@ export function openExportDialog() {
         label: 'Exportera', primary: true, onClick: async (btn) => {
           btn.textContent = 'Exporterar…';
           last = { ...o };
-          try { localStorage.setItem('ediholio.export', JSON.stringify(last)); } catch { /* ignore */ }
+          try { localStorage.setItem('motiv.export', JSON.stringify(last)); } catch { /* ignore */ }
           await doExport(o);
           return true;
         },

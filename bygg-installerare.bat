@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title Ediholio - bygg installerare
+title Motiv - bygg installerare
 cd /d "%~dp0src-tauri"
 where cargo-tauri >nul 2>nul
 if errorlevel 1 (

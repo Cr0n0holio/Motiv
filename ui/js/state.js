@@ -229,13 +229,13 @@ export function serializeDoc() {
   const used = usedAssetIds();
   const assets = {};
   for (const id of used) if (d.assets[id]) assets[id] = d.assets[id];
-  return JSON.stringify({ app: 'ediholio', version: 1, doc: { ...d, assets } });
+  return JSON.stringify({ app: 'motiv', version: 1, doc: { ...d, assets } });
 }
 
 export function parseDoc(text) {
   const o = JSON.parse(text);
   const d = o.doc || o;
-  if (!d || !Array.isArray(d.elements) || !d.width) throw new Error('Filen är inte ett Ediholio-projekt');
+  if (!d || !Array.isArray(d.elements) || !d.width) throw new Error('Filen är inte ett Motiv-projekt');
   d.assets ||= {};
   d.background ||= { fill: { type: 'solid', color: '#ffffff' }, image: null };
   d.dpi ||= 300;

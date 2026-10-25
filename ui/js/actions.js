@@ -133,7 +133,7 @@ export function duplicateSelection(offset = null) {
   return copies;
 }
 
-const CLIP_MARK = 'ediholio-clip:';
+const CLIP_MARK = 'motiv-clip:';
 export function copySelection() {
   const els = selected();
   if (!els.length) return false;
