@@ -1,2 +1,3 @@
 # Batchfiler måste ha Windows-radbrytningar för att cmd ska läsa dem rätt
 *.bat text eol=crlf
+*.sh text eol=lf

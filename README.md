@@ -17,6 +17,17 @@ WebView2 finns redan i Windows 10/11.
 **Installerare (.msi/.exe):** kör `bygg-installerare.bat`. Den installerar
 Tauri CLI en gång och lägger installeraren i `src-tauri\target\release\bundle\`.
 
+## Linux (.deb och AppImage)
+
+Kör `./bygg-linux.sh` på Ubuntu/Debian, eller i WSL på Windows
+(`wsl --install` som administratör, starta om, öppna sedan Ubuntu och gå till
+projektmappen, t.ex. `cd /mnt/c/Users/<namn>/Documents/AI/Ediholio`).
+Skriptet installerar systempaket, Rust och Tauri CLI vid behov och lägger
+`.deb` och `.AppImage` i `dist/linux/`.
+
+- **.deb**: `sudo apt install ./dist/linux/Motiv_*.deb`
+- **AppImage**: `chmod +x Motiv_*.AppImage` och kör filen direkt, ingen installation.
+
 ## Funktioner
 
 **Text**

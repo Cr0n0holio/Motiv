@@ -295,7 +295,12 @@ pub fn build_font_db(app: &AppHandle) -> fontdb::Database {
     if let Ok(dir) = fonts_dir(app) {
         db.load_fonts_dir(dir);
     }
-    db.set_sans_serif_family("Arial");
-    db.set_serif_family("Times New Roman");
+    // Reservfonter: Windows har Arial/Times, Linux oftast Liberation eller DejaVu
+    let has = |name: &str| db.faces().any(|f| f.families.iter().any(|(n, _)| n == name));
+    let pick = |names: &[&'static str]| names.iter().copied().find(|n| has(n)).unwrap_or(names[0]);
+    let sans = pick(&["Arial", "Liberation Sans", "DejaVu Sans", "Noto Sans"]);
+    let serif = pick(&["Times New Roman", "Liberation Serif", "DejaVu Serif", "Noto Serif"]);
+    db.set_sans_serif_family(sans);
+    db.set_serif_family(serif);
     db
 }
