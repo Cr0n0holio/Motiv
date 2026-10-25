@@ -96,21 +96,24 @@ builders.format = () => {
     openTab('format', true);
   };
 
+  const useTemplate = async (t) => {
+    if (state.doc.elements.length && !(await confirmDialog('Använd mall', 'Mallen ersätter din nuvarande design. Fortsätta?', { ok: 'Använd mall' }))) return;
+    const doc = t.build();
+    loadDoc(doc, { fileName: t.name, filePath: null });
+    await ensureDocFonts(doc.elements);
+    A.relayoutAllText();
+    emit('doc');
+  };
+
   panel.append(
     head('Format & mallar'),
-    h('div', { class: 'lp-section' },
-      h('h4', null, 'Startmallar'),
-      h('div', { class: 'tpl-grid' }, TEMPLATES.map((t) => h('button', {
-        class: 'tpl', onclick: async () => {
-          if (state.doc.elements.length && !(await confirmDialog('Använd mall', 'Mallen ersätter din nuvarande design. Fortsätta?', { ok: 'Använd mall' }))) return;
-          const doc = t.build();
-          loadDoc(doc, { fileName: t.name, filePath: null });
-          await ensureDocFonts(doc.elements);
-          A.relayoutAllText();
-          emit('doc');
-        },
-      }, h('span', { class: 'tpl-thumb', style: { background: t.thumb } }, h('span', { class: 'tpl-t', style: t.tstyle || {} }, t.short)), h('span', { class: 'tpl-name' }, t.name)))),
-    ),
+    ...TEMPLATE_CATS.map((cat) => h('div', { class: 'lp-section' },
+      h('h4', null, cat),
+      h('div', { class: 'tpl-grid' }, TEMPLATES.filter((t) => t.cat === cat).map((t) => h('button', { class: 'tpl', title: `${t.name} – ${t.fmt}`, onclick: () => useTemplate(t) },
+        h('span', { class: 'tpl-thumb', style: { background: t.thumb } }, h('span', { class: 'tpl-t', style: t.tstyle || {} }, t.short)),
+        h('span', { class: 'tpl-name' }, t.name),
+        h('span', { class: 'tpl-fmt muted small' }, t.fmt)))),
+    )),
     h('div', { class: 'lp-section' },
       h('h4', null, 'Egen storlek'),
       h('div', { class: 'grid3' },
@@ -379,10 +382,13 @@ const T = (o) => createText(o);
 const S = (k, o) => createShape(k, o);
 function place(el, x, y) { syncTextBox(el, 'center'); el.x = x - el.w / 2; el.y = y - el.h / 2; return el; }
 function placeShape(el, x, y, w, hh) { el.w = w; el.h = hh; el.x = x - w / 2; el.y = y - hh / 2; return el; }
+const solid = (color) => ({ type: 'solid', color });
+const lin = (angle, ...colors) => ({ type: 'linear', angle, stops: colors.map((color, i) => ({ offset: i / (colors.length - 1), color })) });
+const line = (x, y, w, color, width, rotation = 0) => placeShape(S('line', { rotation, stroke: { enabled: true, color, width, dash: 'solid' } }), x, y, w, Math.max(20, width * 3));
 
 const TEMPLATES = [
   {
-    name: 'Konsertaffisch', short: 'LIVE', thumb: 'linear-gradient(170deg,#1e1b4b,#9333ea 60%,#f97316)', tstyle: { color: '#fff', textShadow: '0 0 8px #ff2bd6' },
+    name: 'Konsertaffisch', cat: 'Affischer', fmt: 'A4', short: 'LIVE', thumb: 'linear-gradient(170deg,#1e1b4b,#9333ea 60%,#f97316)', tstyle: { color: '#fff', textShadow: '0 0 8px #ff2bd6' },
     build() {
       const d = newDoc(2480, 3508, 300);
       d.background.fill = { type: 'linear', angle: 170, stops: [{ offset: 0, color: '#1e1b4b' }, { offset: 0.6, color: '#9333ea' }, { offset: 1, color: '#f97316' }] };
@@ -397,7 +403,7 @@ const TEMPLATES = [
     },
   },
   {
-    name: 'Citat', short: '“ ”', thumb: '#f4ede4', tstyle: { color: '#7c2d12', fontFamily: 'Georgia, serif' },
+    name: 'Citat', cat: 'Sociala medier', fmt: 'Instagram 1080×1080', short: '“ ”', thumb: '#f4ede4', tstyle: { color: '#7c2d12', fontFamily: 'Georgia, serif' },
     build() {
       const d = newDoc(1080, 1080, 72);
       d.background.fill = { type: 'solid', color: '#f4ede4' };
@@ -411,7 +417,7 @@ const TEMPLATES = [
     },
   },
   {
-    name: 'Rea-skylt', short: '−50%', thumb: '#facc15', tstyle: { color: '#dc2626', fontWeight: 900 },
+    name: 'Rea-skylt', cat: 'Affischer', fmt: 'A4', short: '−50%', thumb: '#facc15', tstyle: { color: '#dc2626', fontWeight: 900 },
     build() {
       const d = newDoc(2480, 3508, 300);
       d.background.fill = { type: 'solid', color: '#facc15' };
@@ -425,7 +431,7 @@ const TEMPLATES = [
     },
   },
   {
-    name: 'Inbjudan', short: 'Fest', thumb: 'linear-gradient(160deg,#fdf2f8,#fbcfe8)', tstyle: { color: '#9d174d', fontFamily: 'cursive', fontStyle: 'italic' },
+    name: 'Inbjudan', cat: 'Inbjudningar & kort', fmt: 'A5', short: 'Fest', thumb: 'linear-gradient(160deg,#fdf2f8,#fbcfe8)', tstyle: { color: '#9d174d', fontFamily: 'cursive', fontStyle: 'italic' },
     build() {
       const d = newDoc(1748, 2480, 300);
       d.background.fill = { type: 'linear', angle: 160, stops: [{ offset: 0, color: '#fdf2f8' }, { offset: 1, color: '#fbcfe8' }] };
@@ -439,6 +445,255 @@ const TEMPLATES = [
       return d;
     },
   },
+  {
+    name: 'Lansering', cat: 'Sociala medier', fmt: 'Instagram 1080×1080', short: 'NYHET', thumb: '#0f172a', tstyle: { color: '#22d3ee', letterSpacing: '2px' },
+    build() {
+      const d = newDoc(1080, 1080, 72);
+      d.background.fill = solid('#0f172a');
+      d.elements.push(
+        placeShape(S('blob', { fill: lin(135, '#22d3ee', '#a855f7') }), 800, 280, 620, 620),
+        placeShape(S('ring', { innerRatio: 0.7, fill: solid('#f472b6') }), 960, 960, 220, 220),
+        place(T({ text: 'NYHET', fontFamily: 'Unbounded', fontWeight: 800, fontSize: 56, width: 900, align: 'left', letterSpacing: 400, fill: solid('#22d3ee') }), 540, 470),
+        place(T({ text: 'Vår nya\nkollektion\när här', fontFamily: 'Unbounded', fontWeight: 800, fontSize: 104, width: 900, align: 'left', lineHeight: 1.05, fill: solid('#ffffff') }), 540, 680),
+        placeShape(S('rounded', { radius: 45, fill: solid('#ffffff') }), 250, 950, 320, 90),
+        place(T({ text: 'Läs mer →', fontFamily: 'Montserrat', fontWeight: 700, fontSize: 38, width: 300, fill: solid('#0f172a') }), 250, 950),
+      );
+      return d;
+    },
+  },
+  {
+    name: 'Dagens tips', cat: 'Sociala medier', fmt: 'Story 1080×1920', short: 'Tips', thumb: 'linear-gradient(180deg,#fef3c7,#fbcfe8)', tstyle: { color: '#be185d', fontFamily: 'Georgia, serif' },
+    build() {
+      const d = newDoc(1080, 1920, 72);
+      d.background.fill = lin(180, '#fef3c7', '#fbcfe8');
+      d.elements.push(
+        placeShape(S('ellipse', { fill: solid('#fde68a') }), 920, 230, 520, 520),
+        placeShape(S('ring', { innerRatio: 0.7, fill: solid('#f9a8d4') }), 140, 1720, 360, 360),
+        place(T({ text: 'DAGENS TIPS', fontFamily: 'Montserrat', fontWeight: 800, fontSize: 46, width: 900, letterSpacing: 400, fill: solid('#be185d') }), 540, 420),
+        place(T({ text: 'Drick ett glas vatten innan kaffet', fontFamily: 'Fraunces', fontWeight: 700, fontSize: 116, width: 900, lineHeight: 1.1, fill: solid('#3b0a2a') }), 540, 760),
+        placeShape(S('rounded', { radius: 40, fill: solid('#ffffffcc') }), 540, 1300, 900, 380),
+        place(T({ text: 'Kroppen har klarat sig utan vätska hela natten. Ett glas direkt på morgonen ger mer energi än du tror.', fontFamily: 'Poppins', fontWeight: 400, fontSize: 42, width: 780, lineHeight: 1.45, fill: solid('#3b0a2a') }), 540, 1300),
+        place(T({ text: '@dittkonto', fontFamily: 'Poppins', fontWeight: 600, fontSize: 40, width: 600, fill: solid('#be185d') }), 540, 1720),
+      );
+      return d;
+    },
+  },
+  {
+    name: 'YouTube-miniatyr', cat: 'Sociala medier', fmt: '1280×720', short: 'SÅ GÖR DU', thumb: '#facc15', tstyle: { color: '#111', fontSize: '20px' },
+    build() {
+      const d = newDoc(1280, 720, 72);
+      d.background.fill = solid('#facc15');
+      d.elements.push(
+        placeShape(S('ellipse', { fill: solid('#111111') }), 1030, 370, 500, 500),
+        place(T({ text: '?', fontFamily: 'Luckiest Guy', fontWeight: 400, fontSize: 340, width: 400, fill: solid('#facc15') }), 1030, 390),
+        place(T({ text: 'SÅ GÖR DU', fontFamily: 'Luckiest Guy', fontWeight: 400, fontSize: 150, width: 760, align: 'left', lineHeight: 0.95, fill: solid('#111111') }), 430, 230),
+        place(T({ text: 'PÅ 5 MINUTER', fontFamily: 'Luckiest Guy', fontWeight: 400, fontSize: 92, width: 760, align: 'left', fill: solid('#ffffff'), stroke: { enabled: true, color: '#111111', width: 6 } }), 430, 450),
+        placeShape(S('arrowShape', { rotation: -18, fill: solid('#dc2626'), stroke: { enabled: true, color: '#111111', width: 6, dash: 'solid' } }), 640, 610, 240, 130),
+      );
+      return d;
+    },
+  },
+  {
+    name: 'Facebook-omslag', cat: 'Sociala medier', fmt: '1640×624', short: 'Café', thumb: 'linear-gradient(90deg,#0ea5e9,#6366f1)', tstyle: { color: '#fff', fontFamily: 'Georgia, serif' },
+    build() {
+      const d = newDoc(1640, 624, 72);
+      d.background.fill = lin(90, '#0ea5e9', '#6366f1');
+      d.elements.push(
+        placeShape(S('ellipse', { fill: solid('#ffffff22') }), 1460, 110, 380, 380),
+        placeShape(S('ellipse', { fill: solid('#ffffff1a') }), 1320, 560, 240, 240),
+        placeShape(S('ring', { innerRatio: 0.75, fill: solid('#ffffff33') }), 170, 110, 220, 220),
+        place(T({ text: 'Välkommen till', fontFamily: 'Poppins', fontWeight: 500, fontSize: 46, width: 1200, fill: solid('#ffffffdd') }), 820, 210),
+        place(T({ text: 'Café Solsidan', fontFamily: 'Playfair Display', fontWeight: 700, fontSize: 130, width: 1300, fill: solid('#ffffff') }), 820, 320),
+        place(T({ text: 'Öppet alla dagar 8–18', fontFamily: 'Montserrat', fontWeight: 600, fontSize: 34, width: 1200, letterSpacing: 250, uppercase: true, fill: solid('#ffffff') }), 820, 450),
+      );
+      return d;
+    },
+  },
+  {
+    name: 'Vi söker', cat: 'Jobb & företag', fmt: 'Instagram 1080×1350', short: 'VI SÖKER', thumb: '#ecfdf5', tstyle: { color: '#065f46', fontSize: '20px' },
+    build() {
+      const d = newDoc(1080, 1350, 72);
+      d.background.fill = solid('#ecfdf5');
+      d.elements.push(
+        placeShape(S('blob', { fill: solid('#6ee7b7') }), 920, 170, 440, 440),
+        place(T({ text: 'VI SÖKER', fontFamily: 'Archivo Black', fontWeight: 400, fontSize: 60, width: 900, align: 'left', letterSpacing: 200, fill: solid('#065f46') }), 540, 270),
+        place(T({ text: 'Junior\nutvecklare', fontFamily: 'Archivo Black', fontWeight: 400, fontSize: 124, width: 900, align: 'left', lineHeight: 1.0, fill: solid('#022c22') }), 540, 470),
+        place(T({ text: 'till vårt team i Umeå', fontFamily: 'Poppins', fontWeight: 500, fontSize: 46, width: 900, align: 'left', fill: solid('#065f46') }), 540, 670),
+        place(T({ text: '•  Hybridjobb\n•  Friskvårdsbidrag\n•  Trevliga kollegor', fontFamily: 'Poppins', fontWeight: 500, fontSize: 44, width: 900, align: 'left', lineHeight: 1.6, fill: solid('#022c22') }), 540, 890),
+        placeShape(S('rounded', { radius: 50, fill: solid('#059669') }), 310, 1170, 440, 100),
+        place(T({ text: 'Ansök senast 30/11', fontFamily: 'Montserrat', fontWeight: 700, fontSize: 34, width: 420, fill: solid('#ffffff') }), 310, 1170),
+      );
+      return d;
+    },
+  },
+  {
+    name: 'Presentation', cat: 'Jobb & företag', fmt: '16:9 1920×1080', short: 'Q3', thumb: 'linear-gradient(135deg,#1e3a8a,#0f172a)', tstyle: { color: '#93c5fd' },
+    build() {
+      const d = newDoc(1920, 1080, 72);
+      d.background.fill = lin(135, '#1e3a8a', '#0f172a');
+      d.elements.push(
+        placeShape(S('ellipse', { fill: { type: 'radial', stops: [{ offset: 0, color: '#60a5fa66' }, { offset: 1, color: '#60a5fa00' }] } }), 1620, 200, 1200, 1200),
+        placeShape(S('rect', { fill: solid('#60a5fa') }), 210, 300, 100, 10),
+        place(T({ text: 'KVARTALSRAPPORT', fontFamily: 'Inter', fontWeight: 700, fontSize: 38, width: 1400, align: 'left', letterSpacing: 300, fill: solid('#93c5fd') }), 860, 380),
+        place(T({ text: 'Resultat och\nfokus framåt', fontFamily: 'Inter', fontWeight: 800, fontSize: 128, width: 1400, align: 'left', lineHeight: 1.05, fill: solid('#ffffff') }), 860, 565),
+        place(T({ text: 'Q3 2026 · Ledningsgruppen', fontFamily: 'Inter', fontWeight: 400, fontSize: 42, width: 1400, align: 'left', fill: solid('#cbd5e1') }), 860, 790),
+      );
+      return d;
+    },
+  },
+  {
+    name: 'Föreläsning', cat: 'Affischer', fmt: 'A4', short: 'Design', thumb: 'linear-gradient(180deg,#e63946 55%,#f5f5f0 55%)', tstyle: { color: '#f5f5f0' },
+    build() {
+      const d = newDoc(2480, 3508, 300);
+      d.background.fill = solid('#f5f5f0');
+      d.elements.push(
+        placeShape(S('rect', { fill: solid('#e63946') }), 1240, 900, 2480, 1800),
+        placeShape(S('ellipse', { fill: solid('#111111') }), 2000, 1800, 600, 600),
+        place(T({ text: 'Design\nsom\nfungerar', fontFamily: 'Space Grotesk', fontWeight: 700, fontSize: 380, width: 2100, align: 'left', lineHeight: 0.95, fill: solid('#f5f5f0') }), 1240, 900),
+        place(T({ text: 'FÖRELÄSNING', fontFamily: 'Space Grotesk', fontWeight: 700, fontSize: 80, width: 2100, align: 'left', letterSpacing: 300, fill: solid('#e63946') }), 1240, 2150),
+        place(T({ text: 'Maria Holm om enkelhet,\nform och funktion', fontFamily: 'Space Grotesk', fontWeight: 500, fontSize: 130, width: 2100, align: 'left', lineHeight: 1.15, fill: solid('#111111') }), 1240, 2500),
+        place(T({ text: 'Tor 9 okt · 18.00\nStadsbiblioteket, Malmö\nFri entré', fontFamily: 'Space Grotesk', fontWeight: 400, fontSize: 80, width: 2100, align: 'left', lineHeight: 1.4, fill: solid('#111111') }), 1240, 3060),
+      );
+      return d;
+    },
+  },
+  {
+    name: 'Loppis', cat: 'Affischer', fmt: 'A4', short: 'LOPPIS', thumb: '#efe3c8', tstyle: { color: '#b91c1c', fontFamily: 'Impact, sans-serif' },
+    build() {
+      const d = newDoc(2480, 3508, 300);
+      d.background.fill = solid('#efe3c8');
+      d.elements.push(
+        placeShape(S('rounded', { radius: 60, fill: { type: 'none' }, stroke: { enabled: true, color: '#1f2937', width: 10, dash: 'dashed' } }), 1240, 1754, 2280, 3308),
+        placeShape(S('star', { rotation: 12, fill: solid('#f59e0b') }), 330, 330, 240, 240),
+        placeShape(S('heart', { rotation: 10, fill: solid('#f97316') }), 2160, 2080, 260, 240),
+        place(T({ text: 'LOPPIS', fontFamily: 'Amatic SC', fontWeight: 700, fontSize: 760, width: 2300, fill: solid('#b91c1c') }), 1240, 880),
+        place(T({ text: 'på gården', fontFamily: 'Caveat', fontWeight: 700, fontSize: 220, width: 2000, rotation: -6, fill: solid('#1f2937') }), 1240, 1500),
+        place(T({ text: 'Lördag 14 juni\nkl. 10–15', fontFamily: 'Montserrat', fontWeight: 800, fontSize: 150, width: 2000, lineHeight: 1.2, fill: solid('#1f2937') }), 1240, 2150),
+        place(T({ text: 'Kläder · Böcker · Leksaker · Prylar', fontFamily: 'Montserrat', fontWeight: 600, fontSize: 80, width: 2100, fill: solid('#b91c1c') }), 1240, 2650),
+        place(T({ text: 'Ekvägen 7, Uppsala', fontFamily: 'Montserrat', fontWeight: 700, fontSize: 90, width: 2000, fill: solid('#efe3c8'), background: { enabled: true, color: '#1f2937', padding: 0.4, radius: 0.5 } }), 1240, 3050),
+      );
+      return d;
+    },
+  },
+  {
+    name: 'Lopp', cat: 'Affischer', fmt: 'A4', short: 'SPRING', thumb: 'linear-gradient(170deg,#0b0b0f 60%,#f97316 60%,#f97316 75%,#facc15 75%)', tstyle: { color: '#fff', fontStyle: 'italic' },
+    build() {
+      const d = newDoc(2480, 3508, 300);
+      d.background.fill = solid('#0b0b0f');
+      d.elements.push(
+        placeShape(S('parallelogram', { rotation: -12, fill: solid('#f97316') }), 1240, 2300, 3200, 260),
+        placeShape(S('parallelogram', { rotation: -12, fill: solid('#facc15') }), 1240, 2620, 3200, 140),
+        place(T({ text: 'SPRING', fontFamily: 'Oswald', fontWeight: 700, italic: true, fontSize: 700, width: 2400, fill: solid('#ffffff') }), 1240, 950),
+        place(T({ text: 'MILEN', fontFamily: 'Oswald', fontWeight: 700, italic: true, fontSize: 520, width: 2400, fill: { type: 'none' }, stroke: { enabled: true, color: '#f97316', width: 8 } }), 1240, 1620),
+        place(T({ text: 'Söndag 7 sep · Start 10.00 · Slottsparken', fontFamily: 'Montserrat', fontWeight: 700, fontSize: 80, width: 2300, letterSpacing: 60, fill: solid('#ffffff') }), 1240, 3060),
+        place(T({ text: 'Anmälan: ediholio.se/milen', fontFamily: 'Montserrat', fontWeight: 500, fontSize: 64, width: 2300, fill: solid('#facc15') }), 1240, 3270),
+      );
+      return d;
+    },
+  },
+  {
+    name: 'Meny', cat: 'Jobb & företag', fmt: 'A4', short: 'MENY', thumb: '#14301f', tstyle: { color: '#f5e9d3', fontFamily: 'Georgia, serif', letterSpacing: '3px' },
+    build() {
+      const d = newDoc(2480, 3508, 300);
+      d.background.fill = solid('#14301f');
+      const dish = { fontFamily: 'Playfair Display', fontWeight: 400, fontSize: 80, lineHeight: 1.6, fill: solid('#f5e9d3') };
+      const heading = { fontFamily: 'Montserrat', fontWeight: 700, fontSize: 70, width: 2000, letterSpacing: 300, fill: solid('#d4a373') };
+      // Rätter och priser är två textrutor med samma radavstånd så att raderna linjerar
+      const course = (title, names, prices, y) => [
+        place(T({ ...heading, text: title }), 1240, y),
+        place(T({ ...dish, text: names, width: 1600, align: 'left' }), 1040, y + 300),
+        place(T({ ...dish, text: prices, width: 400, align: 'right' }), 2040, y + 300),
+      ];
+      d.elements.push(
+        place(T({ text: 'MENY', fontFamily: 'Playfair Display', fontWeight: 700, fontSize: 260, width: 2000, letterSpacing: 200, fill: solid('#f5e9d3') }), 1240, 440),
+        place(T({ text: 'Bistro Linnea', fontFamily: 'Dancing Script', fontWeight: 700, fontSize: 140, width: 2000, fill: solid('#d4a373') }), 1240, 700),
+        line(1240, 850, 600, '#d4a373', 4),
+        ...course('FÖRRÄTTER', 'Toast Skagen\nRödbetscarpaccio\nSvampsoppa', '145 kr\n125 kr\n115 kr', 1050),
+        ...course('VARMRÄTTER', 'Helstekt torskrygg\nRaggmunk med fläsk\nSvamprisotto', '265 kr\n195 kr\n215 kr', 1700),
+        ...course('EFTERRÄTTER', 'Kladdkaka med grädde\nRabarberpaj\nOstbricka', '95 kr\n95 kr\n135 kr', 2350),
+        place(T({ text: 'Fråga personalen om allergener', fontFamily: 'Poppins', fontWeight: 400, italic: true, fontSize: 56, width: 2000, fill: solid('#f5e9d3aa') }), 1240, 3200),
+      );
+      return d;
+    },
+  },
+  {
+    name: 'Födelsedag', cat: 'Inbjudningar & kort', fmt: 'A5', short: 'Grattis!', thumb: '#fff7ed', tstyle: { color: '#e11d48', fontFamily: 'cursive', fontSize: '22px' },
+    build() {
+      const d = newDoc(1748, 2480, 300);
+      d.background.fill = solid('#fff7ed');
+      const confetti = [
+        [180, 220, 60, '#f43f5e', 'ellipse'], [1560, 260, 50, '#3b82f6', 'star'], [300, 1100, 44, '#facc15', 'ellipse'],
+        [1500, 1250, 70, '#10b981', 'star'], [150, 1650, 56, '#a855f7', 'star'], [1600, 1650, 40, '#f97316', 'ellipse'],
+        [260, 2300, 50, '#3b82f6', 'ellipse'], [1480, 2280, 64, '#f43f5e', 'star'], [880, 2330, 36, '#10b981', 'ellipse'],
+      ];
+      d.elements.push(
+        ...confetti.map(([x, y, s, c, k]) => placeShape(S(k, { rotation: (x + y) % 40, fill: solid(c) }), x, y, s, s)),
+        line(720, 1060, 500, '#94a3b8', 4, 90),
+        line(1060, 1150, 520, '#94a3b8', 4, 90),
+        placeShape(S('ellipse', { fill: solid('#facc15') }), 890, 470, 270, 340),
+        placeShape(S('ellipse', { fill: solid('#f43f5e') }), 720, 620, 340, 420),
+        placeShape(S('ellipse', { fill: solid('#3b82f6') }), 1060, 720, 300, 380),
+        place(T({ text: 'Grattis', fontFamily: 'Pacifico', fontWeight: 400, fontSize: 340, width: 1500, fill: solid('#e11d48') }), 874, 1520),
+        place(T({ text: 'PÅ FÖDELSEDAGEN!', fontFamily: 'Montserrat', fontWeight: 800, fontSize: 96, width: 1500, letterSpacing: 100, fill: solid('#1e293b') }), 874, 1830),
+        place(T({ text: 'Hipp hipp hurra – idag är det din dag', fontFamily: 'Caveat', fontWeight: 600, fontSize: 92, width: 1500, fill: solid('#475569') }), 874, 2050),
+      );
+      return d;
+    },
+  },
+  {
+    name: 'Save the date', cat: 'Inbjudningar & kort', fmt: 'A5', short: 'A & E', thumb: '#faf7f2', tstyle: { color: '#b08d57', fontFamily: 'Georgia, serif', fontStyle: 'italic' },
+    build() {
+      const d = newDoc(1748, 2480, 300);
+      d.background.fill = solid('#faf7f2');
+      const gold = '#b08d57';
+      d.elements.push(
+        placeShape(S('rect', { fill: { type: 'none' }, stroke: { enabled: true, color: gold, width: 4, dash: 'solid' } }), 874, 1240, 1548, 2280),
+        placeShape(S('rect', { fill: { type: 'none' }, stroke: { enabled: true, color: gold, width: 2, dash: 'solid' } }), 874, 1240, 1484, 2216),
+        place(T({ text: 'SAVE THE DATE', fontFamily: 'Cinzel', fontWeight: 600, fontSize: 88, width: 1400, letterSpacing: 300, fill: solid(gold) }), 874, 600),
+        line(874, 730, 300, gold, 3),
+        place(T({ text: 'Anna & Erik', fontFamily: 'Cormorant Garamond', fontWeight: 600, italic: true, fontSize: 220, width: 1400, fill: solid('#3f3a33') }), 874, 1050),
+        place(T({ text: '06 · 09 · 2027', fontFamily: 'Cinzel', fontWeight: 400, fontSize: 116, width: 1400, letterSpacing: 150, fill: solid('#3f3a33') }), 874, 1450),
+        place(T({ text: 'Göteborg', fontFamily: 'Cormorant Garamond', fontWeight: 400, italic: true, fontSize: 90, width: 1400, fill: solid('#7a6a55') }), 874, 1650),
+        placeShape(S('diamond', { fill: solid(gold) }), 874, 1830, 40, 40),
+        place(T({ text: 'Formell inbjudan följer', fontFamily: 'Montserrat', fontWeight: 500, fontSize: 44, width: 1400, letterSpacing: 300, uppercase: true, fill: solid(gold) }), 874, 2000),
+      );
+      return d;
+    },
+  },
+  {
+    name: 'Vykort', cat: 'Inbjudningar & kort', fmt: '15×10,5 cm', short: 'Gotland', thumb: 'linear-gradient(180deg,#fff1d6 70%,#0f766e 70%)', tstyle: { color: '#0f766e', fontFamily: 'cursive' },
+    build() {
+      const d = newDoc(1748, 1240, 300);
+      d.background.fill = solid('#fff1d6');
+      d.elements.push(
+        placeShape(S('halfCircle', { fill: lin(180, '#f97316', '#fb7185') }), 874, 860, 1000, 500),
+        // Ränder i bakgrundsfärgen över solen ger retrokänsla
+        placeShape(S('rect', { fill: solid('#fff1d6') }), 874, 900, 1100, 26),
+        placeShape(S('rect', { fill: solid('#fff1d6') }), 874, 975, 1100, 36),
+        placeShape(S('rect', { fill: solid('#fff1d6') }), 874, 1055, 1100, 46),
+        placeShape(S('rect', { fill: solid('#0f766e') }), 874, 1175, 1748, 130),
+        place(T({ text: 'Hälsningar från', fontFamily: 'Montserrat', fontWeight: 700, fontSize: 58, width: 1500, letterSpacing: 300, uppercase: true, fill: solid('#9a3412') }), 874, 170),
+        place(T({ text: 'Gotland', fontFamily: 'Lobster', fontWeight: 400, fontSize: 300, width: 1500, fill: solid('#0f766e'), shadow: { enabled: true, color: '#f97316', blur: 0, x: 10, y: 10 } }), 874, 400),
+      );
+      return d;
+    },
+  },
+  {
+    name: 'Mobilbakgrund', cat: 'Sociala medier', fmt: '1170×2532', short: '☾', thumb: 'linear-gradient(180deg,#0f172a,#312e81 60%,#be185d)', tstyle: { color: '#fde68a' },
+    build() {
+      const d = newDoc(1170, 2532, 72);
+      d.background.fill = { type: 'linear', angle: 180, stops: [{ offset: 0, color: '#0f172a' }, { offset: 0.6, color: '#312e81' }, { offset: 1, color: '#be185d' }] };
+      const stars = [[180, 300, 34], [960, 220, 26], [1020, 1050, 30], [140, 1150, 22], [520, 260, 18], [880, 1400, 20]];
+      d.elements.push(
+        ...stars.map(([x, y, s]) => placeShape(S('star', { points: 4, innerRatio: 0.35, fill: solid('#ffffffcc') }), x, y, s, s)),
+        placeShape(S('ellipse', { fill: solid('#fde68a'), shadow: { enabled: true, color: '#fde68a99', blur: 120, x: 0, y: 0 } }), 585, 720, 420, 420),
+        place(T({ text: 'Ett steg\ni taget', fontFamily: 'DM Serif Display', fontWeight: 400, fontSize: 170, width: 1000, lineHeight: 1.05, fill: solid('#fff7ed') }), 585, 1520),
+      );
+      return d;
+    },
+  },
 ];
+
+const TEMPLATE_CATS = ['Affischer', 'Sociala medier', 'Inbjudningar & kort', 'Jobb & företag'];
 
 export { createImage };

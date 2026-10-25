@@ -123,6 +123,7 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
 .tpl-thumb { display: flex; align-items: center; justify-content: center; aspect-ratio: 4/3; border-radius: 10px; border: 1px solid var(--line); font-size: 26px; font-weight: 900; }
 .tpl:hover .tpl-thumb { outline: 2px solid var(--accent); }
 .tpl-name { display: block; margin-top: 5px; font-size: 12px; color: var(--text-2); }
+.tpl-fmt { display: block; font-size: 11px; }
 .size-list { display: flex; flex-direction: column; gap: 2px; }
 .size-item { display: flex; align-items: center; gap: 10px; padding: 8px; background: none; border: 0; border-radius: 8px; text-align: left; }
 .size-item:hover { background: var(--panel-2); }
