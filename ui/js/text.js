@@ -213,7 +213,9 @@ export function drawText(ctx, el, scale) {
     ctx.restore();
   }
 
-  const run = (mode) => {
+  // glyphPaint: för böjd text med gradient räknas fyllningen om per bokstav,
+  // annars skulle varje bokstav bara få gradientens första färg.
+  const run = (mode, glyphPaint = null) => {
     const fn = mode === 'stroke' ? 'strokeText' : 'fillText';
     if (!L.curved) {
       for (const ln of L.lines) if (ln.text) ctx[fn](ln.text, ln.x, ln.baseline);
@@ -222,6 +224,7 @@ export function drawText(ctx, el, scale) {
         ctx.save();
         ctx.translate(g.x, g.y);
         ctx.rotate(g.rot);
+        if (glyphPaint) ctx.fillStyle = glyphPaint(g);
         ctx[fn](g.ch, -g.w / 2, 0);
         ctx.restore();
       }
@@ -269,7 +272,11 @@ export function drawText(ctx, el, scale) {
   }
   if (hasFill) {
     ctx.fillStyle = fillStyle;
-    run('fill');
+    const gradient = L.curved && el.fill.type !== 'solid';
+    run('fill', gradient ? (g) => canvasPaint(ctx, el.fill, 0, 0, L.w, L.h, (x, y) => {
+      const p = rotatePt(x - g.x, y - g.y, (-g.rot * 180) / Math.PI);
+      return [p.x, p.y];
+    }) : null);
   }
   if (el.underline && !L.curved && hasFill) {
     ctx.fillStyle = fillStyle;

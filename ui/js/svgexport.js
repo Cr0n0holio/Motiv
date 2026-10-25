@@ -50,7 +50,13 @@ function textSVG(el, X) {
     if (!L.curved) {
       return L.lines.filter((l) => l.text).map((l) => `<text x="${R(l.x)}" y="${R(l.baseline)}" xml:space="preserve">${escapeXml(l.text)}</text>`).join('');
     }
-    return L.glyphs.filter((g) => g.ch.trim()).map((g) => `<text transform="translate(${R(g.x)} ${R(g.y)}) rotate(${R((g.rot * 180) / Math.PI)})" x="${R(-g.w / 2)}" y="0">${escapeXml(g.ch)}</text>`).join('');
+    // Böjd text: varje bokstav placeras med x/y + rotate i stället för transform,
+    // så att en gradientfyllning ligger still över hela texten.
+    return L.glyphs.filter((g) => g.ch.trim()).map((g) => {
+      const deg = (g.rot * 180) / Math.PI;
+      const o = rotatePt(-g.w / 2, 0, deg);
+      return `<text x="${R(g.x + o.x)}" y="${R(g.y + o.y)}" rotate="${R(deg)}">${escapeXml(g.ch)}</text>`;
+    }).join('');
   };
   const hasFill = paintIsVisible(el.fill);
   const hasStroke = el.stroke?.enabled && el.stroke.width > 0;

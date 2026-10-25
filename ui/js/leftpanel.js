@@ -384,6 +384,8 @@ function place(el, x, y) { syncTextBox(el, 'center'); el.x = x - el.w / 2; el.y 
 function placeShape(el, x, y, w, hh) { el.w = w; el.h = hh; el.x = x - w / 2; el.y = y - hh / 2; return el; }
 const solid = (color) => ({ type: 'solid', color });
 const lin = (angle, ...colors) => ({ type: 'linear', angle, stops: colors.map((color, i) => ({ offset: i / (colors.length - 1), color })) });
+const WEEKDAYS = ['Måndag', 'Tisdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lördag', 'Söndag'];
+const DAY_COLORS = ['#e76f51', '#f4a261', '#d4a017', '#2a9d8f', '#264653', '#6a994e', '#b56576'];
 const line = (x, y, w, color, width, rotation = 0) => placeShape(S('line', { rotation, stroke: { enabled: true, color, width, dash: 'solid' } }), x, y, w, Math.max(20, width * 3));
 
 const TEMPLATES = [
@@ -692,8 +694,93 @@ const TEMPLATES = [
       return d;
     },
   },
+  {
+    name: 'Veckoplanering', cat: 'Planering', fmt: 'A4', short: 'Vecka', thumb: '#faf7f2', tstyle: { color: '#1f2937', fontFamily: 'Georgia, serif' },
+    build() {
+      const d = newDoc(2480, 3508, 300);
+      d.background.fill = solid('#faf7f2');
+      d.elements.push(
+        place(T({ text: 'Veckoplanering', fontFamily: 'DM Serif Display', fontWeight: 400, fontSize: 190, width: 1500, align: 'left', fill: solid('#1f2937') }), 910, 330),
+        place(T({ text: 'VECKA', fontFamily: 'Montserrat', fontWeight: 700, fontSize: 54, width: 300, align: 'right', letterSpacing: 250, fill: solid('#9ca3af') }), 1690, 360),
+        line(2090, 395, 460, '#9ca3af', 4),
+      );
+      // Sju dagar + "Att göra" i ett rutnät med 2 kolumner × 4 rader
+      const boxes = [...WEEKDAYS.map((day, i) => ({ day, color: DAY_COLORS[i] })), { day: 'Att göra', color: '#1f2937', todo: true }];
+      boxes.forEach((b, i) => {
+        const cx = i % 2 ? 1795 : 685, cy = 940 + Math.floor(i / 2) * 700;
+        const left = cx - 525;
+        d.elements.push(
+          placeShape(S('rounded', { radius: 40, fill: solid('#ffffff'), stroke: { enabled: true, color: '#e7e1d7', width: 4, dash: 'solid' } }), cx, cy, 1050, 640),
+          placeShape(S('ellipse', { fill: solid(b.color) }), left + 70, cy - 240, 32, 32),
+          place(T({ text: b.day, uppercase: true, fontFamily: 'Montserrat', fontWeight: 700, fontSize: 52, width: 900, align: 'left', letterSpacing: 200, fill: solid(b.color) }), left + 565, cy - 240),
+        );
+        if (b.todo) {
+          for (const y of [cy - 120, cy - 10, cy + 100, cy + 210]) {
+            d.elements.push(
+              placeShape(S('rounded', { radius: 8, fill: { type: 'none' }, stroke: { enabled: true, color: '#9ca3af', width: 4, dash: 'solid' } }), left + 75, y - 18, 44, 44),
+              line(cx + 30, y, 870, '#e7e1d7', 3),
+            );
+          }
+        } else {
+          for (const y of [cy - 100, cy + 30, cy + 160]) d.elements.push(line(cx, y, 930, '#e7e1d7', 3));
+        }
+      });
+      return d;
+    },
+  },
+  {
+    name: 'Veckoschema', cat: 'Planering', fmt: 'A4 liggande', short: 'M T O T F', thumb: 'linear-gradient(90deg,#e76f51 14%,#f4a261 14% 28%,#e9c46a 28% 42%,#2a9d8f 42% 57%,#264653 57% 71%,#8ab17d 71% 85%,#b56576 85%)', tstyle: { color: '#fff', fontSize: '15px', letterSpacing: '4px' },
+    build() {
+      const d = newDoc(3508, 2480, 300);
+      d.background.fill = solid('#f3f4f6');
+      d.elements.push(
+        place(T({ text: 'Veckoschema', fontFamily: 'Poppins', fontWeight: 700, fontSize: 150, width: 1800, align: 'left', fill: solid('#111827') }), 1040, 260),
+        place(T({ text: 'VECKA', fontFamily: 'Montserrat', fontWeight: 700, fontSize: 54, width: 300, align: 'right', letterSpacing: 250, fill: solid('#9ca3af') }), 2720, 290),
+        line(3120, 325, 460, '#9ca3af', 4),
+      );
+      WEEKDAYS.forEach((day, i) => {
+        const cx = 140 + 435 / 2 + i * 465;
+        d.elements.push(
+          placeShape(S('rounded', { radius: 24, fill: solid(DAY_COLORS[i]) }), cx, 530, 435, 140),
+          place(T({ text: day, fontFamily: 'Montserrat', fontWeight: 700, fontSize: 54, width: 420, fill: solid('#ffffff') }), cx, 530),
+          placeShape(S('rounded', { radius: 24, fill: solid('#ffffff'), stroke: { enabled: true, color: '#e5e7eb', width: 4, dash: 'solid' } }), cx, 1430, 435, 1540),
+        );
+      });
+      d.elements.push(
+        place(T({ text: 'Anteckningar:', fontFamily: 'Montserrat', fontWeight: 600, fontSize: 50, width: 600, align: 'left', fill: solid('#6b7280') }), 440, 2330),
+        line(2134, 2350, 2468, '#d1d5db', 4),
+      );
+      return d;
+    },
+  },
+  {
+    name: 'Veckans meny', cat: 'Planering', fmt: 'A4', short: 'Meny', thumb: '#fffbeb', tstyle: { color: '#b45309', fontFamily: 'cursive', fontStyle: 'italic' },
+    build() {
+      const d = newDoc(2480, 3508, 300);
+      d.background.fill = solid('#fffbeb');
+      d.elements.push(
+        placeShape(S('blob', { fill: solid('#fde68a') }), 2200, 260, 700, 600),
+        place(T({ text: 'Veckans meny', fontFamily: 'Pacifico', fontWeight: 400, fontSize: 210, width: 2000, fill: solid('#b45309') }), 1240, 420),
+      );
+      WEEKDAYS.forEach((day, i) => {
+        const y = 820 + i * 285;
+        d.elements.push(
+          place(T({ text: day, uppercase: true, fontFamily: 'Montserrat', fontWeight: 700, fontSize: 64, width: 600, align: 'left', letterSpacing: 150, fill: solid(DAY_COLORS[i]) }), 520, y),
+          line(1540, y + 30, 1440, '#e7d9b8', 4),
+        );
+      });
+      d.elements.push(
+        placeShape(S('rounded', { radius: 40, fill: solid('#fef3c7') }), 1240, 3080, 2080, 560),
+        place(T({ text: 'INKÖPSLISTA', fontFamily: 'Montserrat', fontWeight: 800, fontSize: 60, width: 1800, align: 'left', letterSpacing: 250, fill: solid('#b45309') }), 1240, 2900),
+        line(1240, 3060, 1840, '#e7d9b8', 4),
+        line(1240, 3180, 1840, '#e7d9b8', 4),
+        line(1240, 3300, 1840, '#e7d9b8', 4),
+      );
+      return d;
+    },
+  },
 ];
 
-const TEMPLATE_CATS = ['Affischer', 'Sociala medier', 'Inbjudningar & kort', 'Jobb & företag'];
+const TEMPLATE_CATS = ['Affischer', 'Sociala medier', 'Inbjudningar & kort', 'Planering', 'Jobb & företag'];
 
 export { createImage };

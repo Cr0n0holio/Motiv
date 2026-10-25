@@ -10,16 +10,22 @@ export function gradientLine(angle, x, y, w, h) {
   return [cx - dx * half, cy - dy * half, cx + dx * half, cy + dy * half];
 }
 
-export function canvasPaint(ctx, paint, x, y, w, h) {
+/**
+ * map: valfri funktion (x, y) → [x, y] som flyttar gradientens punkter till
+ * ett annat koordinatsystem, t.ex. en enskild bokstav i böjd text som ritas
+ * förskjuten och roterad. Måste vara en stel avbildning (flytt + rotation).
+ */
+export function canvasPaint(ctx, paint, x, y, w, h, map = null) {
   if (!paint || paint.type === 'none') return null;
   if (paint.type === 'solid') return paint.color;
+  const P = map || ((px, py) => [px, py]);
   let g;
   if (paint.type === 'radial') {
-    const cx = x + w / 2, cy = y + h / 2;
+    const [cx, cy] = P(x + w / 2, y + h / 2);
     g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(1, Math.hypot(w, h) / 2));
   } else {
     const [x1, y1, x2, y2] = gradientLine(paint.angle ?? 90, x, y, w, h);
-    g = ctx.createLinearGradient(x1, y1, x2, y2);
+    g = ctx.createLinearGradient(...P(x1, y1), ...P(x2, y2));
   }
   const stops = [...(paint.stops || [])].sort((a, b) => a.offset - b.offset);
   for (const s of stops) g.addColorStop(Math.min(1, Math.max(0, s.offset)), s.color);
