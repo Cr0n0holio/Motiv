@@ -1,10 +1,10 @@
 // Editorns canvas: rendering, zoom/panorering, markering, flytta/skala/
 // rotera, fästlinjer, textredigering direkt på canvasen och beskärning.
-import { state, emit, on, commit, select, selected, getById, single, markDirty } from './state.js';
+import { state, emit, on, commit, select, selected, getById, single, markDirty, pageView, groupMatrix } from './state.js';
 import { rad, deg, rotatePt, clamp, deepClone } from './util.js';
 import { renderDoc, drawElement } from './render.js';
 import { layoutText, syncTextBox, isCurved, fontString, letterSpacingPx, textHitPad } from './text.js';
-import { aabb, unionBox, scaleProps, corners, duplicateSelection } from './actions.js';
+import { aabb, unionBox, scaleProps, corners, duplicateSelection, enterGroup, exitGroup } from './actions.js';
 import { getImage, sourceSize, alphaAt } from './images.js';
 import { maskD } from './shapes.js';
 import { paintIsVisible } from './paint.js';
@@ -53,6 +53,7 @@ export function initEditor(hostEl) {
   on('selection', () => { if (state.cropId && !state.selection.includes(state.cropId)) finishCrop(true); requestRender(); });
   on('fonts', () => { requestRender(); if (textarea) positionTextarea(); });
   on('image-loaded', requestRender);
+  on('group', requestRender);
   on('doc:replaced', () => { finishTextEdit(); requestAnimationFrame(fitToScreen); });
   on('doc:resized', () => requestAnimationFrame(fitToScreen));
 }
@@ -76,8 +77,43 @@ function resize() {
 }
 
 // ---------- Vy ----------
-export const docToScreen = (x, y) => ({ x: x * state.zoom + state.panX, y: y * state.zoom + state.panY });
-export const screenToDoc = (x, y) => ({ x: (x - state.panX) / state.zoom, y: (y - state.panY) / state.zoom });
+// Sidans koordinater <-> skärmen
+const pageToScreen = (x, y) => ({ x: x * state.zoom + state.panX, y: y * state.zoom + state.panY });
+const screenToPage = (x, y) => ({ x: (x - state.panX) / state.zoom, y: (y - state.panY) / state.zoom });
+// "Dokumentkoordinater" är de markerade elementens: sidans, eller den öppnade
+// gruppens egna när man redigerar inuti en grupp. All flytt, skalning och
+// rotation räknas där, så samma kod fungerar på båda nivåerna.
+const inGroup = () => state.doc.groupPath.length > 0;
+export const docToScreen = (x, y) => {
+  if (!inGroup()) return pageToScreen(x, y);
+  const p = groupMatrix().transformPoint(new DOMPoint(x, y));
+  return pageToScreen(p.x, p.y);
+};
+export const screenToDoc = (x, y) => {
+  const p = screenToPage(x, y);
+  if (!inGroup()) return p;
+  const q = groupMatrix().inverse().transformPoint(new DOMPoint(p.x, p.y));
+  return { x: q.x, y: q.y };
+};
+/** Den öppnade gruppens rotation på skärmen (för handtag och markörer). */
+const scopeRot = () => { if (!inGroup()) return 0; const m = groupMatrix(); return deg(Math.atan2(m.b, m.a)); };
+
+/** Öppnar gruppen under pekaren och markerar delen man pekade på. */
+function enterGroupAt(g, s) {
+  enterGroup(g);
+  const d = screenToDoc(s.x, s.y);
+  const child = hitTest(d.x, d.y);
+  select(child ? [child.id] : []);
+}
+
+/** Lämnar en öppnad grupp (Esc, klick utanför, Klar-knappen). */
+export function exitGroupEditing() {
+  if (!inGroup()) return;
+  finishTextEdit();
+  finishCrop(true);
+  exitGroup();
+  requestRender();
+}
 const viewW = () => canvas.width / dpr;
 const viewH = () => canvas.height / dpr;
 
@@ -97,7 +133,7 @@ export function fitToScreen() {
 export function zoomTo(z, sx = viewW() / 2, sy = viewH() / 2) {
   z = clamp(z, 0.02, 16);
   state._autoFit = false;
-  const d = screenToDoc(sx, sy);
+  const d = screenToPage(sx, sy);
   state.zoom = z;
   state.panX = sx - d.x * z;
   state.panY = sy - d.y * z;
@@ -161,6 +197,7 @@ function frame() {
     ctx.save();
     ctx.setTransform(S, 0, 0, S, dpr * px, dpr * py);
     ctx.globalAlpha = 0.28;
+    if (inGroup()) { const m = groupMatrix(); ctx.transform(m.a, m.b, m.c, m.d, m.e, m.f); }
     for (const el of sel) drawElement(ctx, el, S);
     ctx.restore();
   }
@@ -171,7 +208,7 @@ function frame() {
   ctx.save();
   ctx.beginPath(); ctx.rect(px, py, pw, ph); ctx.clip();
   ctx.setTransform(S, 0, 0, S, dpr * px, dpr * py);
-  renderDoc(ctx, d, S, {});
+  renderDoc(ctx, pageView(d, d.pageIndex), S, {});
   ctx.restore();
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -185,6 +222,7 @@ function drawCropGhost(el, S, px, py) {
   if (!img) return;
   ctx.save();
   ctx.setTransform(S, 0, 0, S, dpr * px, dpr * py);
+  if (inGroup()) { const m = groupMatrix(); ctx.transform(m.a, m.b, m.c, m.d, m.e, m.f); }
   ctx.translate(el.x + el.w / 2, el.y + el.h / 2);
   ctx.rotate(rad(el.rotation || 0));
   ctx.scale(el.flipX ? -1 : 1, el.flipY ? -1 : 1);
@@ -261,6 +299,13 @@ function drawOverlay() {
     if (el) strokePoly(corners(el).map((p) => docToScreen(p.x, p.y)), ACCENT, 1.5);
   }
 
+  // Öppnad grupp: streckad ram runt gruppens innehåll
+  if (inGroup() && state.doc.elements.length) {
+    const b = unionBox(state.doc.elements);
+    const pad = 6 / state.zoom;
+    strokePoly([[b.l - pad, b.t - pad], [b.r + pad, b.t - pad], [b.r + pad, b.b + pad], [b.l - pad, b.b + pad]].map(([x, y]) => docToScreen(x, y)), 'rgba(139,92,246,0.9)', 1.5, [6, 5]);
+  }
+
   if (state.cropId) { drawCropOverlay(); return; }
 
   const f = selectionFrame();
@@ -286,7 +331,7 @@ function drawOverlay() {
         if (small && hp.k.length === 1) continue;
         ctx.save();
         ctx.translate(hp.x, hp.y);
-        ctx.rotate(rad(f.rot));
+        ctx.rotate(rad(f.rot + scopeRot()));
         ctx.fillStyle = '#fff';
         ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = 4;
         ctx.beginPath();
@@ -413,7 +458,7 @@ function onHover(e) {
   if (state.cropId) { canvas.style.cursor = cropCursor(s, d); return; }
   const f = selectionFrame();
   const hp = f && !state.editingTextId ? hitHandle(f, s.x, s.y) : null;
-  if (hp) { canvas.style.cursor = cursorFor(hp, f.rot); setHover(null); return; }
+  if (hp) { canvas.style.cursor = cursorFor(hp, f.rot + scopeRot()); setHover(null); return; }
   const hit = hitTest(d.x, d.y);
   canvas.style.cursor = hit ? (hit.locked ? 'default' : 'move') : 'default';
   setHover(hit ? hit.id : null);
@@ -427,7 +472,7 @@ function snapshotSel() {
 function onDown(e) {
   canvas.focus({ preventScroll: true });
   const s = screenPt(e);
-  const d = screenToDoc(s.x, s.y);
+  let d = screenToDoc(s.x, s.y);
   hideContextMenu();
 
   if (e.button === 1 || (e.button === 0 && spaceDown)) {
@@ -439,7 +484,8 @@ function onDown(e) {
   if (state.editingTextId) finishTextEdit();
 
   if (e.button === 2) {
-    const hit = hitTest(d.x, d.y);
+    let hit = hitTest(d.x, d.y);
+    if (!hit && inGroup()) { exitGroupEditing(); d = screenToDoc(s.x, s.y); hit = hitTest(d.x, d.y); }
     if (hit && !state.selection.includes(hit.id)) select([hit.id]);
     if (!hit) select([]);
     return; // contextmenu-händelsen visar menyn
@@ -461,6 +507,12 @@ function onDown(e) {
   }
 
   let hit = hitTest(d.x, d.y);
+  // Klick utanför den öppnade gruppens delar lämnar gruppen och gäller sidan
+  if (!hit && inGroup() && !(f && state.selection.length > 1 && pointInFrame(f, d.x, d.y))) {
+    exitGroupEditing();
+    d = screenToDoc(s.x, s.y);
+    hit = hitTest(d.x, d.y);
+  }
   // Klick inne i en multimarkering flyttar hela markeringen
   if (f && state.selection.length > 1 && pointInFrame(f, d.x, d.y) && !e.shiftKey) hit = hit && state.selection.includes(hit.id) ? hit : selected()[0];
 
@@ -533,8 +585,15 @@ function onUp() {
 // ---------- Flytta ----------
 function snapTargets(excludeIds) {
   const d = state.doc;
-  const xs = [{ v: 0, from: 0, to: d.height }, { v: d.width / 2, from: 0, to: d.height }, { v: d.width, from: 0, to: d.height }];
-  const ys = [{ v: 0, from: 0, to: d.width }, { v: d.height / 2, from: 0, to: d.width }, { v: d.height, from: 0, to: d.width }];
+  let xs = [{ v: 0, from: 0, to: d.height }, { v: d.width / 2, from: 0, to: d.height }, { v: d.width, from: 0, to: d.height }];
+  let ys = [{ v: 0, from: 0, to: d.width }, { v: d.height / 2, from: 0, to: d.width }, { v: d.height, from: 0, to: d.width }];
+  if (inGroup()) {
+    // Sidans kanter i gruppens koordinater – bara meningsfullt om gruppen inte är roterad/speglad
+    const m = groupMatrix();
+    const plain = Math.abs(m.b) < 1e-9 && Math.abs(m.c) < 1e-9 && m.a > 0 && m.d > 0;
+    xs = plain ? xs.map((t) => ({ v: t.v - m.e, from: t.from - m.f, to: t.to - m.f })) : [];
+    ys = plain ? ys.map((t) => ({ v: t.v - m.f, from: t.from - m.e, to: t.to - m.e })) : [];
+  }
   for (const el of d.elements) {
     if (excludeIds.has(el.id) || !el.visible) continue;
     const b = aabb(el);
@@ -738,6 +797,7 @@ function onDblClick(e) {
   if (!hit || hit.locked) return;
   if (hit.type === 'text') { select([hit.id]); startTextEdit(hit, true); }
   else if (hit.type === 'image') { select([hit.id]); startCrop(hit); }
+  else if (hit.type === 'group') enterGroupAt(hit, s);
 }
 
 // ---------- Textredigering ----------
@@ -792,7 +852,7 @@ export function positionTextarea() {
   st.height = `${hh * z}px`;
   st.left = `${c.x - (w * z) / 2}px`;
   st.top = `${c.y - (hh * z) / 2}px`;
-  st.transform = `rotate(${el.rotation || 0}deg)`;
+  st.transform = `rotate(${(el.rotation || 0) + scopeRot()}deg)`;
   textarea.classList.toggle('visible-text', curved);
   if (curved) st.color = '#111'; else st.color = 'transparent';
   const fillColor = el.fill?.type === 'solid' ? el.fill.color : '#000';
@@ -889,7 +949,7 @@ function drawCropOverlay() {
   for (const hp of cropHandles(el)) {
     ctx.save();
     ctx.translate(hp.x, hp.y);
-    ctx.rotate(rad(el.rotation || 0));
+    ctx.rotate(rad((el.rotation || 0) + scopeRot()));
     ctx.fillStyle = '#fff';
     ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = 4;
     if (hp.k.length === 2) {
@@ -908,7 +968,7 @@ const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t 
 function cropCursor(s, d) {
   const el = getById(state.cropId);
   if (!el) return 'default';
-  for (const hp of cropHandles(el)) if (Math.hypot(s.x - hp.x, s.y - hp.y) <= 12) return cursorFor(hp, el.rotation || 0);
+  for (const hp of cropHandles(el)) if (Math.hypot(s.x - hp.x, s.y - hp.y) <= 12) return cursorFor(hp, (el.rotation || 0) + scopeRot());
   return hitElement(el, d.x, d.y) ? 'move' : 'default';
 }
 
@@ -981,8 +1041,9 @@ export function setContextMenuHider(fn) { ctxMenuHide = fn; }
 function hideContextMenu() { ctxMenuHide(); }
 
 export function getCanvas() { return canvas; }
-export function viewCenterDoc() { return screenToDoc(viewW() / 2, viewH() / 2); }
+export function viewCenterDoc() { return screenToPage(viewW() / 2, viewH() / 2); }
+/** Sidkoordinater för en punkt på skärmen (t.ex. där något släpps). */
 export function screenToDocFromClient(cx, cy) {
   const r = canvas.getBoundingClientRect();
-  return screenToDoc(cx - r.left, cy - r.top);
+  return screenToPage(cx - r.left, cy - r.top);
 }

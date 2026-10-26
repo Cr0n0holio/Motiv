@@ -374,3 +374,8 @@ input[type="number"]::-webkit-inner-spin-button { opacity: .4; }
 .pg-add:hover { border-color: var(--accent); color: var(--text); background: rgba(139,92,246,.08); }
 .pg-drop { position: absolute; top: 14px; bottom: 30px; width: 3px; border-radius: 2px; background: var(--accent); pointer-events: none; }
 .drop-hint + .check { margin-top: 12px; }
+
+/* ---------- Öppnad grupp ---------- */
+#groupbar { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: none; align-items: center; gap: 10px; padding: 6px 6px 6px 12px; background: rgba(24,25,31,.94); border: 1px solid rgba(139,92,246,.6); border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.35); z-index: 4; font-size: 12px; color: var(--text); }
+#groupbar.on { display: flex; }
+#groupbar .ic { width: 16px; height: 16px; color: var(--accent); }

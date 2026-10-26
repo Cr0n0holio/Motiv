@@ -22,14 +22,45 @@ export function newPage() {
   return { id: uid('p'), background: { fill: { type: 'solid', color: '#ffffff' }, image: null }, elements: [] };
 }
 
+// Redigering inuti en grupp: doc.groupPath är id:n för gruppen man har
+// öppnat (och ev. grupper i den). Då pekar doc.elements på gruppens barn,
+// så att markering, åtgärder och paneler arbetar inne i gruppen. Barnens
+// koordinater är gruppens egna; editorn räknar om dem med groupMatrix().
 function attachPageAccessors(doc) {
   const cur = () => doc.pages[Math.min(doc.pageIndex, doc.pages.length - 1)];
+  const scope = () => {
+    const chain = groupChain(doc);
+    return chain.length ? chain[chain.length - 1].children : cur().elements;
+  };
   Object.defineProperties(doc, {
     pageIndex: { value: 0, writable: true, enumerable: false, configurable: true },
-    elements: { get: () => cur().elements, set: (v) => { cur().elements = v; }, enumerable: false, configurable: true },
+    groupPath: { value: [], writable: true, enumerable: false, configurable: true },
+    elements: { get: () => scope(), set: (v) => { const chain = groupChain(doc); if (chain.length) chain[chain.length - 1].children = v; else cur().elements = v; }, enumerable: false, configurable: true },
     background: { get: () => cur().background, set: (v) => { cur().background = v; }, enumerable: false, configurable: true },
   });
   return doc;
+}
+
+/** Grupperna man står i, yttersta först. Ogiltiga steg (t.ex. efter ångra) rensas bort. */
+export function groupChain(doc = state.doc) {
+  const out = [];
+  let list = doc.pages[Math.min(doc.pageIndex, doc.pages.length - 1)].elements;
+  for (const id of doc.groupPath) {
+    const g = list.find((e) => e.id === id && e.type === 'group');
+    if (!g) { doc.groupPath = out.map((x) => x.id); break; }
+    out.push(g);
+    list = g.children;
+  }
+  return out;
+}
+
+/** Avbildning från den öppnade gruppens koordinater till sidans. */
+export function groupMatrix(doc = state.doc) {
+  let m = new DOMMatrix();
+  for (const g of groupChain(doc)) {
+    m = m.translate(g.x + g.w / 2, g.y + g.h / 2).rotate(g.rotation || 0).scale(g.flipX ? -1 : 1, g.flipY ? -1 : 1).translate(-g.w / 2, -g.h / 2);
+  }
+  return m;
 }
 
 export function newDoc(width = 2480, height = 3508, dpi = 300) {
@@ -203,6 +234,12 @@ export function commit() {
   markDirty();
   emit('history');
 }
+
+/**
+ * Tar nuvarande läge som utgångspunkt utan att skapa ett ångringssteg.
+ * För ändringar som inte syns, t.ex. när en grupps ram räknas om.
+ */
+export function rebaseHistory() { lastSnap = snapshot(); }
 
 function restore(s, page) {
   const o = JSON.parse(s);

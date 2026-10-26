@@ -55,6 +55,7 @@ Skriptet installerar systempaket, Rust och Tauri CLI vid behov och lägger
 - Lager: dra för att ändra ordning, dölj, lås, byt namn
 - Opacitet och 16 blandningslägen
 - Gruppera, justera, fördela, spegla, rotera, fästlinjer (smart snapping)
+- Redigera inuti grupper: dubbelklicka på en grupp för att ändra en del utan att dela upp den (Esc eller Klar för att lämna)
 - Ångra/gör om (150 steg), kopiera/klistra, Alt+dra för att duplicera
 - Format för tryck (A-serien, affischer) och sociala medier, eller egen storlek
   i px/mm/cm/tum med valfri dpi

@@ -1,6 +1,6 @@
 // Åtgärder som används av menyer, paneler, kortkommandon och canvas.
 import {
-  state, emit, commit, select, selected, getById, createText, createShape, createImage, createGroup, reId, allElements,
+  state, emit, commit, select, selected, getById, createText, createShape, createImage, createGroup, reId, allElements, groupChain, rebaseHistory,
 } from './state.js';
 import { uid, rotatePt, deepClone, loadImage, clamp } from './util.js';
 import { syncTextBox, layoutText } from './text.js';
@@ -50,6 +50,7 @@ export function scaleProps(el, s) {
 const pageMin = () => Math.min(state.doc.width, state.doc.height);
 
 export function addElement(el, { at = null, select: sel = true, commitNow = true } = {}) {
+  exitGroup({ reselect: false }); // nya element hamnar på sidan, inte i en öppnad grupp
   const d = state.doc;
   const c = at || { x: d.width / 2, y: d.height / 2 };
   if (el.type === 'text') syncTextBox(el, 'center');
@@ -178,6 +179,7 @@ export function isInternalClipText(t) { return state.clipboard && t === CLIP_MAR
 export function pasteInternal() {
   const cb = state.clipboard;
   if (!cb) return;
+  exitGroup({ reselect: false });
   Object.assign(state.doc.assets, cb.assets);
   cb.pasteCount++;
   const off = pageMin() * 0.02 * cb.pasteCount;
@@ -221,7 +223,9 @@ export function align(how) {
   const els = selected().filter((e) => !e.locked);
   if (!els.length) return;
   const d = state.doc;
-  const ref = els.length === 1 ? { l: 0, t: 0, r: d.width, b: d.height, cx: d.width / 2, cy: d.height / 2 } : unionBox(els);
+  // Ett element justeras mot sidan – eller mot gruppen om man redigerar i en grupp
+  const page = { l: 0, t: 0, r: d.width, b: d.height, cx: d.width / 2, cy: d.height / 2 };
+  const ref = els.length > 1 ? unionBox(els) : d.groupPath.length ? unionBox(d.elements) : page;
   for (const el of els) {
     const b = aabb(el);
     if (how === 'left') el.x += ref.l - b.l;
@@ -399,3 +403,55 @@ export function relayoutAllText(elements = allElements()) {
 const isCurvedText = (e) => e.curve && e.curve.mode !== 'none';
 
 export { getById };
+
+// ---------- Redigera inuti grupper ----------
+
+/** Öppnar en grupp så att dess delar kan redigeras; markerar ev. en av dem. */
+export function enterGroup(g, childId = null) {
+  if (!g || g.type !== 'group' || g.locked) return;
+  state.doc.groupPath = [...state.doc.groupPath, g.id];
+  select(childId ? [childId] : []);
+  emit('group');
+  emit('doc');
+}
+
+/**
+ * Räknar om gruppens ram efter att delarna har ändrats, utan att något flyttar
+ * sig på sidan: delarnas koordinater flyttas till en ram som precis rymmer dem
+ * och gruppens läge justeras med gruppens rotation och spegling.
+ */
+export function normalizeGroup(g) {
+  if (!g.children.length) return;
+  const b = unionBox(g.children);
+  if (Math.abs(b.l) < 0.01 && Math.abs(b.t) < 0.01 && Math.abs(b.w - g.w) < 0.01 && Math.abs(b.h - g.h) < 0.01) return;
+  const fx = g.flipX ? -1 : 1, fy = g.flipY ? -1 : 1;
+  const shift = rotatePt((b.l + b.w / 2 - g.w / 2) * fx, (b.t + b.h / 2 - g.h / 2) * fy, g.rotation || 0);
+  const cx = g.x + g.w / 2 + shift.x, cy = g.y + g.h / 2 + shift.y;
+  for (const c of g.children) { c.x -= b.l; c.y -= b.t; }
+  g.w = b.w; g.h = b.h;
+  g.x = cx - g.w / 2; g.y = cy - g.h / 2;
+}
+
+/**
+ * Lämnar en öppnad grupp (alla nivåer). Gruppen markeras igen. En grupp med
+ * bara en del kvar blir ett vanligt element; en tom grupp tas bort.
+ */
+export function exitGroup({ reselect = true } = {}) {
+  const chain = groupChain();
+  if (!chain.length) return;
+  for (const g of [...chain].reverse()) normalizeGroup(g);
+  rebaseHistory(); // omräkningen syns inte och ska inte bli ett eget ångringssteg
+  const outer = chain[0];
+  state.doc.groupPath = [];
+  emit('group');
+  if (outer.children.length === 0) {
+    state.doc.elements = state.doc.elements.filter((e) => e !== outer);
+    select([]);
+    emit('doc');
+    commit();
+    return;
+  }
+  if (outer.children.length === 1) { select([outer.id]); ungroupSelection(); return; }
+  select(reselect ? [outer.id] : []);
+  emit('doc');
+}

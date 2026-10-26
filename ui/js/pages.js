@@ -6,6 +6,7 @@ import { icon } from './controls.js';
 import { renderToCanvas } from './render.js';
 import { finishTextEdit, finishCrop } from './editor.js';
 import { toast } from './dialogs.js';
+import { exitGroup } from './actions.js';
 
 const pages = () => state.doc.pages;
 export const pageCount = () => pages().length;
@@ -15,6 +16,7 @@ export const currentPage = () => state.doc.pageIndex;
 
 /** Visar sida i (byter inte innehåll och blir inget ångringssteg). */
 export function goToPage(i) {
+  exitGroup({ reselect: false });
   i = Math.max(0, Math.min(i, pageCount() - 1));
   if (i === currentPage()) return;
   finishTextEdit();
@@ -37,6 +39,7 @@ function changed(goTo) {
 
 /** Lägger till en sida (tom om ingen anges) efter sida `after` och visar den. */
 export function addPage(after = currentPage(), page = newPage()) {
+  exitGroup({ reselect: false });
   finishTextEdit();
   finishCrop(true);
   pages().splice(after + 1, 0, page);
@@ -44,6 +47,7 @@ export function addPage(after = currentPage(), page = newPage()) {
 }
 
 export function duplicatePage(i = currentPage()) {
+  exitGroup({ reselect: false });
   finishTextEdit();
   finishCrop(true);
   const src = pages()[i];
@@ -63,6 +67,7 @@ export function deletePage(i = currentPage()) {
 
 /** Flyttar sida `from` så att den hamnar på plats `to` (index efter flytten). */
 export function movePage(from, to) {
+  exitGroup({ reselect: false });
   to = Math.max(0, Math.min(to, pageCount() - 1));
   if (from === to) return;
   const shown = pages()[currentPage()];

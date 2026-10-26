@@ -360,6 +360,7 @@ builders.layers = (refresh = false) => {
     panel.append(head('Lager', 'Överst i listan = längst fram. Dra för att ändra ordning.'), list);
   }
   list.innerHTML = '';
+  if (state.doc.groupPath.length) list.append(h('p', { class: 'muted small pad' }, 'Visar delarna i gruppen du redigerar.'));
   const els = [...state.doc.elements].reverse();
   if (!els.length) list.append(h('p', { class: 'muted small pad' }, 'Inga element ännu.'));
   let dragId = null;

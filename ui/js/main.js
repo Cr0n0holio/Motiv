@@ -7,7 +7,7 @@ import { h, blobToDataURL, debounce } from './util.js';
 import { isTauri, invoke, saveText, openText } from './bridge.js';
 import {
   initEditor, requestRender, fitToScreen, zoomTo, zoomBy, startTextEdit, finishTextEdit, startCrop, finishCrop, isTyping,
-  setContextMenuHider, screenToDocFromClient, hitTest, getCanvas,
+  setContextMenuHider, screenToDocFromClient, hitTest, getCanvas, exitGroupEditing,
 } from './editor.js';
 import { initProperties } from './properties.js';
 import { initLeftPanel, openTab, uploadImages } from './leftpanel.js';
@@ -130,6 +130,7 @@ function contextMenu(e) {
       ['Längst fram', 'Ctrl+Shift+]', () => A.arrange('front')], ['Framåt', 'Ctrl+]', () => A.arrange('forward')],
       ['Bakåt', 'Ctrl+[', () => A.arrange('backward')], ['Längst bak', 'Ctrl+Shift+[', () => A.arrange('back')], null);
     if (els.length > 1) items.push(['Gruppera', 'Ctrl+G', A.groupSelection]);
+    if (el?.type === 'group') items.push(['Redigera innehåll', 'Dubbelklick', () => A.enterGroup(el, el.children[el.children.length - 1]?.id)]);
     if (els.some((x) => x.type === 'group')) items.push(['Dela upp grupp', 'Ctrl+Shift+G', A.ungroupSelection]);
     items.push([els.every((x) => x.locked) ? 'Lås upp' : 'Lås', 'Ctrl+L', A.toggleLock]);
   } else {
@@ -139,6 +140,23 @@ function contextMenu(e) {
 }
 
 // ---------------- Zoom-kontroller ----------------
+// ---------------- Öppnad grupp ----------------
+/** Liten etikett överst på arbetsytan när man redigerar inuti en grupp. */
+function buildGroupBar() {
+  const label = h('span', { class: 'gb-label' });
+  const bar = h('div', { id: 'groupbar' }, icon('group'), label,
+    h('button', { class: 'btn small primary', title: 'Lämna gruppen (Esc)', onclick: exitGroupEditing }, 'Klar'));
+  $('#workspace').append(bar);
+  const upd = () => {
+    const path = state.doc.groupPath;
+    bar.classList.toggle('on', path.length > 0);
+    if (path.length) label.textContent = `Redigerar gruppen – ${state.doc.elements.length} delar`;
+  };
+  on('group', upd);
+  on('doc', upd);
+  on('page', upd);
+}
+
 function buildZoomBar() {
   const zb = $('#zoombar');
   const pct = h('button', { class: 'zoom-pct', title: 'Zoomnivåer' });
@@ -360,8 +378,12 @@ function onKey(e) {
     case 'Delete': case 'Backspace': e.preventDefault(); A.deleteSelection(); break;
     case 'PageUp': e.preventDefault(); goToPage(currentPage() - 1); break;
     case 'PageDown': e.preventDefault(); goToPage(currentPage() + 1); break;
-    case 'Escape': closeColorPicker(); closeFontPicker(); hideMenu(); select([]); break;
-    case 'Enter': { const el = single(); if (el?.type === 'text') { e.preventDefault(); startTextEdit(el, true); } else if (el?.type === 'image') { e.preventDefault(); startCrop(el); } break; }
+    case 'Escape':
+      closeColorPicker(); closeFontPicker(); hideMenu();
+      // Esc lämnar först en öppnad grupp (gruppen blir markerad), sedan avmarkeras allt
+      if (state.doc.groupPath.length) exitGroupEditing(); else select([]);
+      break;
+    case 'Enter': { const el = single(); if (el?.type === 'text') { e.preventDefault(); startTextEdit(el, true); } else if (el?.type === 'image') { e.preventDefault(); startCrop(el); } else if (el?.type === 'group') { e.preventDefault(); A.enterGroup(el, el.children[el.children.length - 1]?.id); } break; }
     case 'ArrowLeft': case 'ArrowRight': case 'ArrowUp': case 'ArrowDown': {
       if (!state.selection.length) return;
       e.preventDefault();
@@ -449,6 +471,7 @@ async function boot() {
   initProperties($('#rightpanel'));
   initPageBar($('#pagebar'), showMenu);
   buildZoomBar();
+  buildGroupBar();
   setupDrop();
   setContextMenuHider(hideMenu);
   getCanvas().addEventListener('contextmenu', contextMenu);

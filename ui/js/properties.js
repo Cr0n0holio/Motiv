@@ -194,7 +194,7 @@ function arrangePanel(el) {
           h('button', { class: 'icon-btn boxed', title: 'Spegla vertikalt', onclick: () => A.flip('y') }, icon('flipV')),
         ) : h('span'),
       ),
-      h('div', { class: 'sub-label' }, 'Justera mot sidan'),
+      h('div', { class: 'sub-label' }, state.doc.groupPath.length ? 'Justera mot gruppen' : 'Justera mot sidan'),
       alignButtons(),
     ),
     section('Utseende',
@@ -478,7 +478,8 @@ function shapePanel(el) {
 
 function groupPanel() {
   return section('Grupp',
-    h('p', { class: 'muted small' }, `${first().children.length} element. Dela upp gruppen för att redigera dem var för sig.`),
+    h('p', { class: 'muted small' }, `${first().children.length} element. Dubbelklicka på gruppen för att ändra en del utan att dela upp den.`),
+    h('button', { class: 'btn full primary', onclick: () => { const g = first(); A.enterGroup(g, g.children[g.children.length - 1]?.id); } }, icon('group'), 'Redigera innehåll'),
     h('button', { class: 'btn full', onclick: () => A.ungroupSelection() }, icon('ungroup'), 'Dela upp grupp (Ctrl+Shift+G)'),
   );
 }
