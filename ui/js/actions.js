@@ -2,7 +2,7 @@
 import {
   state, emit, commit, select, selected, getById, createText, createShape, createImage, createGroup, reId, allElements, groupChain, rebaseHistory,
 } from './state.js';
-import { uid, rotatePt, deepClone, loadImage, clamp } from './util.js';
+import { uid, rotatePt, deepClone, loadImage, clamp, parseColor, toHex } from './util.js';
 import { syncTextBox, layoutText } from './text.js';
 import { ensureTextFont } from './fonts.js';
 import { shrinkImage, shrinkEnabled } from './images.js';
@@ -454,4 +454,79 @@ export function exitGroup({ reselect = true } = {}) {
   if (outer.children.length === 1) { select([outer.id]); ungroupSelection(); return; }
   select(reselect ? [outer.id] : []);
   emit('doc');
+}
+
+// ---------- Färgpalett ----------
+
+const rgbKey = (c) => { const p = parseColor(c); return `${p.r},${p.g},${p.b}`; };
+
+/**
+ * Alla färger i ett element (anropar fn med objekt + nyckel). Effekter som är
+ * avstängda (skugga, glöd, kantlinje …) räknas bara med om onlyEnabled är falskt.
+ */
+function eachColor(el, fn, onlyEnabled = false) {
+  const paint = (p) => {
+    if (!p || p.type === 'none') return;
+    if (p.type === 'solid') fn(p, 'color');
+    else p.stops?.forEach((s) => fn(s, 'color'));
+  };
+  paint(el.fill);
+  for (const k of ['stroke', 'shadow', 'glow', 'border', 'background']) if (el[k]?.color && (!onlyEnabled || el[k].enabled)) fn(el[k], 'color');
+  if (el.type === 'group') el.children.forEach((c) => eachColor(c, fn, onlyEnabled));
+}
+
+/**
+ * Byter en färg mot en annan överallt i designen (alla sidor, bakgrunder,
+ * gradienter, kantlinjer, skuggor …). Jämförelsen bortser från genomskinlighet
+ * och varje förekomst behåller sin egen, så "#ffffff" byter även "#ffffffcc".
+ * Returnerar antalet ändrade färger.
+ */
+export function replaceColor(from, to, { commitNow = true } = {}) {
+  const key = rgbKey(from);
+  const target = parseColor(to);
+  let n = 0;
+  const swap = (o, k) => {
+    if (typeof o[k] !== 'string' || rgbKey(o[k]) !== key) return;
+    const a = parseColor(o[k]).a;
+    const next = toHex({ ...target, a });
+    if (next !== o[k]) { o[k] = next; n++; }
+  };
+  for (const p of state.doc.pages) {
+    p.elements.forEach((el) => eachColor(el, swap));
+    const f = p.background.fill;
+    if (f?.type === 'solid') swap(f, 'color'); else f?.stops?.forEach((st) => swap(st, 'color'));
+  }
+  if (n) { emit('doc'); emit('pages'); if (commitNow) commit(); }
+  return n;
+}
+
+export function addPaletteColor(c) {
+  const pal = state.doc.palette;
+  const hex = toHex(parseColor(c));
+  if (pal.some((x) => x.toLowerCase() === hex.toLowerCase())) return;
+  pal.push(hex);
+  emit('palette');
+  commit();
+}
+
+export function removePaletteColor(i) {
+  state.doc.palette.splice(i, 1);
+  emit('palette');
+  commit();
+}
+
+/** Fyller paletten med designens vanligaste färger (högst 8). */
+export function paletteFromDesign() {
+  const count = new Map();
+  const add = (c) => { if (typeof c !== 'string' || parseColor(c).a < 0.5) return; const h = toHex({ ...parseColor(c), a: 1 }); count.set(h, (count.get(h) || 0) + 1); };
+  for (const p of state.doc.pages) {
+    p.elements.forEach((el) => eachColor(el, (o, k) => add(o[k]), true));
+    const f = p.background.fill;
+    if (f?.type === 'solid') add(f.color); else f?.stops?.forEach((st) => add(st.color));
+  }
+  const top = [...count.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c).slice(0, 8);
+  for (const c of top) if (!state.doc.palette.includes(c)) state.doc.palette.push(c);
+  emit('palette');
+  commit();
+  return top.length;
 }

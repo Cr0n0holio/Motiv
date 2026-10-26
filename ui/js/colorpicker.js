@@ -2,6 +2,7 @@
 // gradientredigerare (linjär/radiell, flera stopp, vinkel).
 import { h, parseColor, toHex, rgbToHsv, hsvToRgb, clamp, deepClone } from './util.js';
 import { state, allElements } from './state.js';
+import { addPaletteColor, removePaletteColor } from './actions.js';
 import { paintCss, GRADIENT_PRESETS } from './paint.js';
 
 const PALETTE = [
@@ -111,6 +112,8 @@ export function openColorPicker(anchor, opts) {
     h('div', { class: 'cp-row' }, h('div', { class: 'cp-sliders' }, hue, alphaWrap), eyeBtn),
     h('div', { class: 'cp-row' }, h('span', { class: 'cp-preview' }), hex, alphaNum, h('span', { class: 'muted' }, '%')),
     opts.allowNone && !isPaint ? h('button', { class: 'btn small full', onclick: () => { setCur('#00000000', true); } }, 'Genomskinlig') : null,
+    h('div', { class: 'cp-label' }, 'Designens palett', h('span', { class: 'muted cp-hint' }, ' · högerklick tar bort')),
+    paletteRow(),
     h('div', { class: 'cp-label' }, 'Dokumentfärger'),
     swatches(docColors()),
     state.recentColors.length ? h('div', { class: 'cp-label' }, 'Senaste') : null,
@@ -118,6 +121,22 @@ export function openColorPicker(anchor, opts) {
     h('div', { class: 'cp-label' }, 'Standardfärger'),
     swatches(PALETTE),
   );
+
+  // Paletten: klick väljer, högerklick tar bort, + sparar aktuell färg
+  function paletteRow() {
+    const row = h('div', { class: 'cp-swatches cp-palette' });
+    const fill = () => {
+      row.innerHTML = '';
+      state.doc.palette.forEach((c, i) => {
+        const b = h('button', { class: 'cp-sw', title: `${c} (högerklick tar bort)`, style: { '--c': c }, onclick: () => { hsv = rgbToHsv(parseColor(c)); alpha = parseColor(c).a; setCur(c, true); } });
+        b.addEventListener('contextmenu', (e) => { e.preventDefault(); removePaletteColor(i); fill(); });
+        row.append(b);
+      });
+      row.append(h('button', { class: 'cp-sw cp-add', title: 'Spara färgen i designens palett', onclick: () => { addPaletteColor(curColor()); fill(); } }, '+'));
+    };
+    fill();
+    return row;
+  }
 
   // --- Rita HSV-ytan ---
   const svCtx = sv.getContext('2d');

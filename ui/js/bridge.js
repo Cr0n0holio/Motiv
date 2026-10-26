@@ -38,9 +38,10 @@ export async function saveBlob(blob, defaultName, filters) {
  * namn och plats en gång och numrerar filerna: Design-1.png, Design-2.png …
  * I webbläsaren laddas de ned var för sig. Returnerar antal sparade, 0 om avbrutet.
  */
-export async function saveBlobs(blobs, defaultName, filters) {
+export async function saveBlobs(blobs, defaultName, filters, suffixes = null) {
   const ext = defaultName.slice(defaultName.lastIndexOf('.'));
-  const numbered = (base, i) => `${base}-${i + 1}${ext}`;
+  // Filerna får ett nummer eller, om suffixes anges, t.ex. "-Instagram-inlagg"
+  const numbered = (base, i) => `${base}-${suffixes ? suffixes[i] : i + 1}${ext}`;
   if (isTauri) {
     const path = await invoke('save_file_dialog', { defaultName, filters });
     if (!path) return 0;

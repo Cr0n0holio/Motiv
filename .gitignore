@@ -6,3 +6,4 @@ src-tauri/gen/
 Thumbs.db
 .vscode/
 dist/
+node_modules/

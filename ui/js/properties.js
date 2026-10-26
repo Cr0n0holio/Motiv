@@ -12,6 +12,8 @@ import { FILTER_PRESETS, getProcessed, ensureImage } from './images.js';
 import { MASK_SHAPES, maskD, isOpenShape } from './shapes.js';
 import { openBgRemoval, restoreBackground } from './bgremoval.js';
 import { pickImages } from './bridge.js';
+import { openColorPicker } from './colorpicker.js';
+import { toast } from './dialogs.js';
 import { addPage, duplicatePage, deletePage, backgroundToAllPages, pageCount, currentPage } from './pages.js';
 import { loadImage, debounce } from './util.js';
 
@@ -120,12 +122,51 @@ function pagePanel() {
       pageCount() > 1 ? h('button', { class: 'btn full', title: 'Kopiera den här sidans bakgrund till alla sidor', onclick: backgroundToAllPages }, icon('bg'), 'Använd på alla sidor') : null,
       h('button', { class: 'btn full ghost', onclick: () => emit('open-tab', 'background') }, icon('palette'), 'Fler bakgrunder'),
     ),
+    palettePanel(),
     section('Kortkommandon',
       h('div', { class: 'shortcuts' },
         ...[['T', 'Ny text'], ['Dubbelklick', 'Redigera text / beskär bild'], ['Ctrl + D', 'Duplicera'], ['Alt + dra', 'Duplicera och flytta'], ['Shift + dra', 'Lås riktning / proportioner'], ['Ctrl + dra', 'Utan fästlinjer'], ['Mellanslag + dra', 'Panorera'], ['Ctrl + hjul', 'Zooma'], ['Ctrl + G', 'Gruppera'], ['Ctrl + 0', 'Anpassa till fönster'], ['Ctrl + Enter', 'Ny sida'], ['Page Up / Down', 'Byt sida']].map(([k, t]) => h('div', null, h('kbd', null, k), h('span', null, t))),
       ),
     ),
   );
+}
+
+// ---------------- Färgpalett ----------------
+/**
+ * Designens palett. Klick på en färg öppnar färgväljaren; den nya färgen
+ * byts då ut överallt i designen där den gamla användes.
+ */
+function palettePanel() {
+  const pal = state.doc.palette;
+  const row = h('div', { class: 'palette-row' });
+  pal.forEach((c, i) => {
+    const b = h('button', { class: 'pal-sw', title: `${c} – klicka för att byta färgen i hela designen`, style: { '--c': c } });
+    b.addEventListener('click', () => {
+      let current = c;
+      openColorPicker(b, {
+        value: c,
+        onChange: (v, final) => {
+          if (v === current) return;
+          pal[i] = v; // före bytet, så att palett och färger blir ett och samma ångringssteg
+          replaceColorLive(current, v, final);
+          current = v;
+          b.style.setProperty('--c', v);
+        },
+      });
+    });
+    b.addEventListener('contextmenu', (e) => { e.preventDefault(); A.removePaletteColor(i); rebuild(); });
+    row.append(b);
+  });
+  return section('Färgpalett',
+    pal.length ? row : h('p', { class: 'muted small' }, 'Spara designens färger här så blir de lätta att återanvända. Byter du en färg i paletten ändras den i hela designen.'),
+    pal.length ? h('p', { class: 'muted small' }, 'Klicka på en färg för att byta den överallt. Högerklick tar bort.') : null,
+    h('button', { class: 'btn full', onclick: () => { const n = A.paletteFromDesign(); if (!n) toast('Designen har inga färger att hämta ännu', 'info'); rebuild(); } }, icon('palette'), 'Hämta färger från designen'),
+  );
+}
+// Under dragning byts färgen direkt (utan ångringssteg), ett steg när man släpper
+function replaceColorLive(from, to, final) {
+  A.replaceColor(from, to, { commitNow: false });
+  if (final) commit();
 }
 
 // ---------------- Flera markerade ----------------

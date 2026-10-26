@@ -64,7 +64,7 @@ export function groupMatrix(doc = state.doc) {
 }
 
 export function newDoc(width = 2480, height = 3508, dpi = 300) {
-  return attachPageAccessors({ version: 2, width, height, dpi, pages: [newPage()], assets: {} });
+  return attachPageAccessors({ version: 2, width, height, dpi, pages: [newPage()], palette: [], assets: {} });
 }
 
 /** En sida som ett fristående "dokument" för rendering och export. */
@@ -213,7 +213,7 @@ let lastSnap = null;
 
 function snapshot() {
   const d = state.doc;
-  return JSON.stringify({ width: d.width, height: d.height, dpi: d.dpi, pages: d.pages });
+  return JSON.stringify({ width: d.width, height: d.height, dpi: d.dpi, palette: d.palette, pages: d.pages });
 }
 
 export function resetHistory() {
@@ -336,6 +336,7 @@ export function parseDoc(text) {
   }
   if (!d.pages.length) d.pages.push(newPage());
   d.version = 2;
+  d.palette ||= [];
   d.assets ||= {};
   d.dpi ||= 300;
   return attachPageAccessors(d);

@@ -54,6 +54,8 @@ Skriptet installerar systempaket, Rust och Tauri CLI vid behov och lägger
 - 16 former, linjer och pilar, gradienter, kantlinjer (heldragen, streckad, prickad)
 - Lager: dra för att ändra ordning, dölj, lås, byt namn
 - Opacitet och 16 blandningslägen
+- **Färgpalett** för designen: spara färger, hämta dem från designen, och byt en
+  palettfärg för att ändra den överallt i designen på en gång
 - Gruppera, justera, fördela, spegla, rotera, fästlinjer (smart snapping)
 - Redigera inuti grupper: dubbelklicka på en grupp för att ändra en del utan att dela upp den (Esc eller Klar för att lämna)
 - Ångra/gör om (150 steg), kopiera/klistra, Alt+dra för att duplicera
@@ -65,6 +67,8 @@ Skriptet installerar systempaket, Rust och Tauri CLI vid behov och lägger
 
 **Export**
 - PNG, JPG och WebP (0,5×–4×, genomskinlig bakgrund), en sida eller en fil per sida
+- **Flera format på en gång**: t.ex. Instagram-inlägg, story och Facebook-omslag
+  från samma design – innehållet skalas och centreras i varje format
 - **PDF för tryck** med alla sidor i en fil, vektortext, utfall (bleed) och
   skärmärken, eller rastrerad PDF för exakt utseende
 - SVG med inbäddade fonter (en sida)
@@ -135,6 +139,28 @@ python -m http.server 8000
 
 Öppna http://localhost:8000. PDF, bakgrundsborttagning och systemfonter
 kräver skrivbordsappen, men allt annat fungerar.
+
+### Tester
+
+Testerna kör appens egen kod (dokument, sidor, grupper, text, färger, mallar,
+export) i en riktig webbläsare:
+
+```
+npm install
+npx playwright install chromium
+npm test
+```
+
+Med `MOTIV_BROWSER=msedge npm test` används Microsoft Edge i stället, utan att
+något behöver laddas ned. Testerna går också att se i webbläsaren: starta
+`python verktyg/mallbilder.py` och öppna http://localhost:8010/verktyg/tester.html.
+
+### GitHub
+
+`.github/workflows/bygg.yml` kör testerna och bygger Windows- och Linux-paketen
+vid varje push. Paketen finns under *Artifacts* i körningen. Pushas en
+versionstagg (t.ex. `git tag v0.3.0 && git push --tags`) skapas en release med
+installationsfilerna.
 
 ### Förhandsbilder för mallarna
 

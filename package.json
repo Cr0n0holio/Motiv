@@ -1,0 +1,12 @@
+{
+  "name": "motiv",
+  "private": true,
+  "description": "Utvecklingsverktyg för Motiv (appen själv har inget byggsteg)",
+  "type": "module",
+  "scripts": {
+    "test": "node verktyg/kor-tester.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.49.1"
+  }
+}
