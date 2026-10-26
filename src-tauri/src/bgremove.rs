@@ -127,20 +127,36 @@ pub async fn bg_download_model(app: AppHandle, id: String) -> Result<(), String>
         .map_err(|e| format!("Nedladdningen misslyckades: {e}"))?
         .error_for_status()
         .map_err(|e| format!("Nedladdningen misslyckades: {e}"))?;
-    let total = resp.content_length().unwrap_or(def.size_mb as u64 * 1024 * 1024);
-    let mut file = std::fs::File::create(&part).map_err(err)?;
-    let mut downloaded: u64 = 0;
-    let mut last_emit: u64 = 0;
-    while let Some(chunk) = resp.chunk().await.map_err(err)? {
-        file.write_all(&chunk).map_err(err)?;
-        downloaded += chunk.len() as u64;
-        if downloaded - last_emit > 256 * 1024 || downloaded >= total {
-            last_emit = downloaded;
-            let _ = app.emit("bg-progress", Progress { id: id.clone(), downloaded, total });
+    let expected = resp.content_length();
+    let total = expected.unwrap_or(def.size_mb as u64 * 1024 * 1024);
+    let result = async {
+        let mut file = std::fs::File::create(&part).map_err(err)?;
+        let mut downloaded: u64 = 0;
+        let mut last_emit: u64 = 0;
+        while let Some(chunk) = resp
+            .chunk()
+            .await
+            .map_err(|e| format!("Nedladdningen avbröts: {e}"))?
+        {
+            file.write_all(&chunk).map_err(err)?;
+            downloaded += chunk.len() as u64;
+            if downloaded - last_emit > 256 * 1024 || downloaded >= total {
+                last_emit = downloaded;
+                let _ = app.emit("bg-progress", Progress { id: id.clone(), downloaded, total });
+            }
         }
+        file.flush().map_err(err)?;
+        if expected.is_some_and(|n| n != downloaded) {
+            return Err("Nedladdningen blev inte komplett, försök igen".to_string());
+        }
+        Ok(())
     }
-    file.flush().map_err(err)?;
-    drop(file);
+    .await;
+    // En halvfärdig fil får aldrig ligga kvar och ta plats
+    if let Err(e) = result {
+        let _ = std::fs::remove_file(&part);
+        return Err(e);
+    }
     std::fs::rename(&part, &path).map_err(err)?;
     Ok(())
 }

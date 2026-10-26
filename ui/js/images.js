@@ -161,11 +161,17 @@ export function getProcessed(el, tw, th) {
   return c;
 }
 
-/** Lämplig upplösning: aldrig mer än källans pixlar, aldrig mer än skärmen behöver. */
+/**
+ * Lämplig upplösning i editorn: aldrig mer än källans pixlar, och avrundad
+ * uppåt till fasta steg (~19 %). Utan stegen skulle varje zoomnivå ge en ny
+ * storlek – och en ny, dyr omräkning av filtren – i varje bildruta.
+ */
 export function targetSize(el, scale) {
   const s = sourceSize(el.assetId);
   const crop = el.crop || { w: 1, h: 1 };
   let tw = el.w * scale, th = el.h * scale;
+  const step = 2 ** (Math.ceil(Math.log2(Math.max(1, tw)) * 4) / 4) / Math.max(1, tw);
+  tw *= step; th *= step;
   if (s) {
     const maxW = s.w * crop.w, maxH = s.h * crop.h;
     const k = Math.min(1, maxW / tw, maxH / th);

@@ -62,12 +62,30 @@ async function registerAppFont(f) {
   }
 }
 
+// family -> Promise. Varje app-font registreras bara en gång.
+const registering = new Map();
+
+/** Registrerar alla vikter av en nedladdad eller egen font. */
+function registerFamily(family) {
+  if (!registering.has(family)) {
+    const faces = fontState.app.filter((f) => f.family === family);
+    registering.set(family, Promise.all(faces.map(registerAppFont)).then(fontsChanged));
+  }
+  return registering.get(family);
+}
+
 export async function initFonts() {
   if (isTauri) {
     try { fontState.system = await invoke('list_system_fonts'); } catch { fontState.system = BROWSER_FALLBACK_SYSTEM; }
     try {
       fontState.app = await invoke('list_app_fonts');
-      await Promise.all(fontState.app.map(registerAppFont));
+      // Varje font läses från disk och skickas till webbvyn, vilket tar tid med
+      // många nedladdade fonter. I stället för att vänta på alla vid start
+      // registreras de en i taget i bakgrunden; fonter som en design behöver
+      // registreras direkt via ensureFamily.
+      setTimeout(async () => {
+        for (const family of new Set(fontState.app.map((f) => f.family))) await registerFamily(family);
+      }, 800);
     } catch (e) { console.warn(e); }
   } else {
     fontState.system = BROWSER_FALLBACK_SYSTEM;
@@ -85,6 +103,7 @@ export const isAvailable = (family) => fontState.loadedFamilies.has(family) || i
 /** Ser till att en familj finns (laddar ned Google Font vid behov). */
 export async function ensureFamily(family) {
   if (!family || fontState.loadedFamilies.has(family) || isSystem(family)) return true;
+  if (isAppFont(family)) { await registerFamily(family); return fontState.loadedFamilies.has(family); }
   if (!isGoogle(family)) return false;
   if (fontState.downloading.has(family)) return false;
   fontState.downloading.add(family);
@@ -93,7 +112,8 @@ export async function ensureFamily(family) {
     if (isTauri) {
       const added = await invoke('download_google_font', { family });
       fontState.app = fontState.app.filter((f) => f.family !== family).concat(added);
-      await Promise.all(added.map(registerAppFont));
+      registering.delete(family);
+      await registerFamily(family);
     } else {
       // Webbläsarläge: hämta CSS direkt från Google
       await new Promise((res) => {
@@ -149,6 +169,7 @@ export async function addCustomFonts() {
   const added = await invoke('add_custom_fonts', { paths });
   fontState.app = fontState.app.filter((f) => !added.some((a) => a.family === f.family && a.weight === f.weight && a.style === f.style)).concat(added);
   await Promise.all(added.map(registerAppFont));
+  for (const family of new Set(added.map((a) => a.family))) registering.set(family, Promise.resolve());
   fontsChanged();
   return added;
 }
@@ -156,6 +177,7 @@ export async function addCustomFonts() {
 export async function removeAppFont(family) {
   await invoke('remove_app_font', { family });
   fontState.app = fontState.app.filter((f) => f.family !== family);
+  registering.delete(family);
   fontsChanged();
 }
 
