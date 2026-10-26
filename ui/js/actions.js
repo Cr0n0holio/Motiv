@@ -1,6 +1,6 @@
 // Åtgärder som används av menyer, paneler, kortkommandon och canvas.
 import {
-  state, emit, commit, select, selected, getById, createText, createShape, createImage, createGroup, reId,
+  state, emit, commit, select, selected, getById, createText, createShape, createImage, createGroup, reId, allElements,
 } from './state.js';
 import { uid, rotatePt, deepClone, loadImage, clamp } from './util.js';
 import { syncTextBox, layoutText } from './text.js';
@@ -338,15 +338,15 @@ export function detachBackgroundImage() {
   commit();
 }
 
-/** Ändrar dokumentets storlek; skalar ev. innehållet proportionellt. */
-export function resizeDocument(w, h, dpi, scaleContent) {
-  const d = state.doc;
-  const ow = d.width, oh = d.height;
-  w = Math.round(clamp(w, 16, 20000)); h = Math.round(clamp(h, 16, 20000));
-  if (scaleContent) {
+/**
+ * Flyttar element från en sida i storleken ow×oh till en i storleken w×h.
+ * scale: skala proportionellt och centrera, annars bara centrera.
+ */
+export function fitElements(elements, ow, oh, w, h, scale = true) {
+  if (scale) {
     const s = Math.min(w / ow, h / oh);
     const offX = (w - ow * s) / 2, offY = (h - oh * s) / 2;
-    for (const el of d.elements) {
+    for (const el of elements) {
       const cx = (el.x + el.w / 2) * s + offX, cy = (el.y + el.h / 2) * s + offY;
       scaleProps(el, s);
       el.x = cx - el.w / 2; el.y = cy - el.h / 2;
@@ -354,8 +354,15 @@ export function resizeDocument(w, h, dpi, scaleContent) {
     }
   } else {
     const offX = (w - ow) / 2, offY = (h - oh) / 2;
-    for (const el of d.elements) { el.x += offX; el.y += offY; }
+    for (const el of elements) { el.x += offX; el.y += offY; }
   }
+}
+
+/** Ändrar storlek på alla sidor; skalar ev. innehållet proportionellt. */
+export function resizeDocument(w, h, dpi, scaleContent) {
+  const d = state.doc;
+  w = Math.round(clamp(w, 16, 20000)); h = Math.round(clamp(h, 16, 20000));
+  for (const p of d.pages) fitElements(p.elements, d.width, d.height, w, h, scaleContent);
   d.width = w; d.height = h;
   if (dpi) d.dpi = dpi;
   emit('doc');
@@ -363,7 +370,7 @@ export function resizeDocument(w, h, dpi, scaleContent) {
   commit();
 }
 
-export function relayoutAllText(elements = state.doc.elements) {
+export function relayoutAllText(elements = allElements()) {
   const walk = (list) => list.forEach((e) => {
     if (e.type === 'text') { layoutText(e); syncTextBox(e, isCurvedText(e) ? 'center' : 'top'); }
     if (e.type === 'group') walk(e.children);

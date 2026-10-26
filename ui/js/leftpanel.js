@@ -1,5 +1,6 @@
 // Vänster sidopanel: format & mallar, text, element, bilder, bakgrund, lager.
-import { state, on, emit, commit, select, createText, createShape, newDoc, loadDoc, elementLabel, markDirty } from './state.js';
+import { state, on, emit, commit, select, createText, createShape, newDoc, loadDoc, elementLabel, markDirty, allElements } from './state.js';
+import { addPage, backgroundToAllPages, pageCount, currentPage } from './pages.js';
 import { h, round, deepClone, debounce } from './util.js';
 import { icon } from './controls.js';
 import * as A from './actions.js';
@@ -9,7 +10,7 @@ import { drawText, layoutText, syncTextBox } from './text.js';
 import { ensureFamily, ensureDocFonts } from './fonts.js';
 import { renderElementThumb } from './render.js';
 import { pickImages } from './bridge.js';
-import { toast, confirmDialog } from './dialogs.js';
+import { toast, modal } from './dialogs.js';
 import { openColorPicker } from './colorpicker.js';
 import { createImage } from './state.js';
 
@@ -37,6 +38,10 @@ export function initLeftPanel(railEl, panelEl) {
   on('doc', refreshLayers);
   on('selection', () => { if (current === 'layers') builders.layers(true); });
   on('fonts', () => { if (current === 'text') drawPresetCanvases(); });
+  // Bakgrundspanelen visar den aktuella sidans bakgrund
+  const refreshBg = () => { if (current === 'background') openTab('background', true); };
+  on('page', refreshBg);
+  on('pages', refreshBg);
   openTab('text');
 }
 
@@ -96,13 +101,39 @@ builders.format = () => {
     openTab('format', true);
   };
 
+  // Tom design: mallen blir designen. Annars får man välja mellan att lägga
+  // till mallen som en ny sida (vanligast) eller ersätta hela designen.
+  const askHow = (t) => new Promise((resolve) => {
+    let answer = null;
+    modal({
+      title: `Använd "${t.name}"`,
+      body: h('p', null, 'Vill du lägga till mallen som en ny sida i din design, eller ersätta hela designen med den?'),
+      onClose: () => resolve(answer),
+      actions: [
+        { label: 'Avbryt' },
+        { label: 'Ersätt designen', onClick: () => { answer = 'replace'; } },
+        { label: 'Lägg till som ny sida', primary: true, onClick: () => { answer = 'page'; } },
+      ],
+    });
+  });
   const useTemplate = async (t) => {
-    if (state.doc.elements.length && !(await confirmDialog('Använd mall', 'Mallen ersätter din nuvarande design. Fortsätta?', { ok: 'Använd mall' }))) return;
-    const doc = t.build();
-    loadDoc(doc, { fileName: t.name, filePath: null });
-    await ensureDocFonts(doc.elements);
-    A.relayoutAllText();
-    emit('doc');
+    const how = allElements().length ? await askHow(t) : 'replace';
+    if (!how) return;
+    const tdoc = t.build();
+    await ensureDocFonts(allElements(tdoc));
+    A.relayoutAllText(allElements(tdoc));
+    if (how === 'replace') {
+      loadDoc(tdoc, { fileName: t.name, filePath: null });
+      emit('doc');
+      return;
+    }
+    const d = state.doc;
+    const page = tdoc.pages[0];
+    if (tdoc.width !== d.width || tdoc.height !== d.height) {
+      A.fitElements(page.elements, tdoc.width, tdoc.height, d.width, d.height, true);
+      toast(`Mallen anpassades till designens format (${d.width} × ${d.height})`, 'info');
+    }
+    addPage(currentPage(), page);
   };
 
   panel.append(
@@ -258,8 +289,10 @@ builders.elements = () => {
 function imageAssets() {
   const masks = new Set();
   const walk = (els) => els.forEach((e) => { if (e.type === 'image' && e.maskAssetId) masks.add(e.maskAssetId); if (e.type === 'group') walk(e.children); });
-  walk(state.doc.elements);
-  if (state.doc.background.image?.maskAssetId) masks.add(state.doc.background.image.maskAssetId);
+  for (const p of state.doc.pages) {
+    walk(p.elements);
+    if (p.background.image?.maskAssetId) masks.add(p.background.image.maskAssetId);
+  }
   return Object.entries(state.doc.assets).filter(([id]) => !masks.has(id) && !(state._maskIds || new Set()).has(id));
 }
 
@@ -303,7 +336,8 @@ builders.background = () => {
     h('div', { class: 'lp-section' }, h('h4', null, 'Färger'), h('div', { class: 'swatch-grid' }, BG_COLORS.map((c) => h('button', { class: 'big-swatch', style: { background: c }, title: c, onclick: () => setFill({ type: 'solid', color: c }) })),
       h('button', { class: 'big-swatch transparent', title: 'Genomskinlig', onclick: () => setFill({ type: 'none' }) }))),
     h('div', { class: 'lp-section' }, h('h4', null, 'Gradienter'), h('div', { class: 'swatch-grid' }, GRADIENT_PRESETS.map((g) => h('button', { class: 'big-swatch', style: { background: paintCss(g) }, onclick: () => setFill(g) })))),
-    h('div', { class: 'lp-section' }, custom),
+    h('div', { class: 'lp-section' }, custom,
+      pageCount() > 1 ? h('button', { class: 'btn full', style: { marginTop: '8px' }, title: 'Kopiera den här sidans bakgrund till alla sidor', onclick: backgroundToAllPages }, icon('bg'), 'Använd på alla sidor') : null),
     h('div', { class: 'lp-section' }, h('h4', null, 'Bild som bakgrund'),
       imageAssets().length ? h('div', { class: 'asset-grid' }, imageAssets().map(([id, url]) => h('button', {
         class: 'asset', title: 'Använd som bakgrund', onclick: () => { d.background.image = { assetId: id, maskAssetId: null, filters: {}, opacity: 1 }; emit('doc'); commit(); },

@@ -1,7 +1,7 @@
 // Färgväljare med HSV-yta, nyans, alfa, hex, pipett, dokumentfärger och
 // gradientredigerare (linjär/radiell, flera stopp, vinkel).
 import { h, parseColor, toHex, rgbToHsv, hsvToRgb, clamp, deepClone } from './util.js';
-import { state } from './state.js';
+import { state, allElements } from './state.js';
 import { paintCss, GRADIENT_PRESETS } from './paint.js';
 
 const PALETTE = [
@@ -34,8 +34,9 @@ function docColors() {
     if (e.stroke?.enabled) set.add(e.stroke.color.toLowerCase());
     if (e.type === 'group') walk(e.children);
   });
-  walk(state.doc.elements);
-  addPaint(state.doc.background.fill);
+  // Färger från alla sidor, så att samma färger är lätta att återanvända
+  walk(allElements());
+  state.doc.pages.forEach((p) => addPaint(p.background.fill));
   return [...set].filter((c) => c.length <= 9).slice(0, 18);
 }
 

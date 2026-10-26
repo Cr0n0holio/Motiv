@@ -2580,6 +2580,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "image",
+ "pdf-writer",
  "reqwest 0.12.28",
  "rfd",
  "serde",

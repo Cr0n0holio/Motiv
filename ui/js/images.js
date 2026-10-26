@@ -1,6 +1,6 @@
 // Bildhantering: cache av inlästa bilder, filter, beskärning, masker.
 // En "bearbetad" bild ritas i den upplösning som behövs och cachas.
-import { state, emit } from './state.js';
+import { state, emit, allElements } from './state.js';
 import { maskD } from './shapes.js';
 import { loadImage, clamp } from './util.js';
 
@@ -8,7 +8,7 @@ const imgCache = new Map();      // assetId -> HTMLImageElement
 const pending = new Map();       // assetId -> Promise
 const maskedCache = new Map();   // assetId|maskId -> canvas
 const processed = new Map();     // nyckel -> canvas (LRU)
-const MAX_PROCESSED = 40;
+const MAX_PROCESSED = 80; // editorn + sidremsans förhandsbilder
 
 export function getImage(assetId) {
   const img = imgCache.get(assetId);
@@ -29,15 +29,18 @@ export async function ensureImage(assetId) {
   return p ? p : null;
 }
 
-export async function ensureAllImages(els = state.doc.elements) {
+/** Laddar alla bilder som används på någon sida (inför export och öppning). */
+export async function ensureAllImages(els = allElements()) {
   const ids = new Set();
   const walk = (list) => list.forEach((e) => {
     if (e.type === 'image') { ids.add(e.assetId); if (e.maskAssetId) ids.add(e.maskAssetId); }
     if (e.type === 'group') walk(e.children);
   });
   walk(els);
-  const bg = state.doc.background.image;
-  if (bg) { ids.add(bg.assetId); if (bg.maskAssetId) ids.add(bg.maskAssetId); }
+  for (const p of state.doc.pages) {
+    const bg = p.background.image;
+    if (bg) { ids.add(bg.assetId); if (bg.maskAssetId) ids.add(bg.maskAssetId); }
+  }
   await Promise.all([...ids].map((id) => ensureImage(id)));
 }
 

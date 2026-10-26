@@ -9,15 +9,41 @@ export function emit(evt, data) { (listeners[evt] || []).forEach((fn) => fn(data
 // ---------- Standardvärden ----------
 export const DEFAULT_SHADOW = { enabled: false, color: '#00000066', blur: 12, x: 6, y: 6 };
 
-export function newDoc(width = 2480, height = 3508, dpi = 300) {
-  return {
-    version: 1,
-    width, height, dpi,
-    background: { fill: { type: 'solid', color: '#ffffff' }, image: null },
-    elements: [],
-    assets: {},
-  };
+// ---------- Sidor ----------
+// Ett dokument har en eller flera sidor med samma storlek. Varje sida har egna
+// element och egen bakgrund; bilderna (assets) delas av alla sidor.
+//
+// doc.elements och doc.background pekar alltid på den aktuella sidan
+// (doc.pageIndex). Därför fungerar editorn, panelerna och åtgärderna som
+// förut – de arbetar helt enkelt på den sida som visas. Egenskaperna är inte
+// uppräkningsbara och följer alltså inte med när dokumentet sparas.
+
+export function newPage() {
+  return { id: uid('p'), background: { fill: { type: 'solid', color: '#ffffff' }, image: null }, elements: [] };
 }
+
+function attachPageAccessors(doc) {
+  const cur = () => doc.pages[Math.min(doc.pageIndex, doc.pages.length - 1)];
+  Object.defineProperties(doc, {
+    pageIndex: { value: 0, writable: true, enumerable: false, configurable: true },
+    elements: { get: () => cur().elements, set: (v) => { cur().elements = v; }, enumerable: false, configurable: true },
+    background: { get: () => cur().background, set: (v) => { cur().background = v; }, enumerable: false, configurable: true },
+  });
+  return doc;
+}
+
+export function newDoc(width = 2480, height = 3508, dpi = 300) {
+  return attachPageAccessors({ version: 2, width, height, dpi, pages: [newPage()], assets: {} });
+}
+
+/** En sida som ett fristående "dokument" för rendering och export. */
+export function pageView(doc, i) {
+  const p = doc.pages[i];
+  return { width: doc.width, height: doc.height, dpi: doc.dpi, assets: doc.assets, elements: p.elements, background: p.background };
+}
+
+/** Alla element på alla sidor (för fonter, bilder och textlayout). */
+export const allElements = (doc = state.doc) => doc.pages.flatMap((p) => p.elements);
 
 export const state = {
   doc: newDoc(),
@@ -146,6 +172,9 @@ export function elementLabel(el) {
 }
 
 // ---------- Historik ----------
+// Varje steg är { s: ögonblicksbild, page: sidan där ändringen gjordes }.
+// Att bara byta sida är inget ångringssteg, men när ett steg ångras eller
+// görs om visas sidan där det hände, så att man ser vad som ändrades.
 const undoStack = [];
 const redoStack = [];
 const MAX_HISTORY = 150;
@@ -153,7 +182,7 @@ let lastSnap = null;
 
 function snapshot() {
   const d = state.doc;
-  return JSON.stringify({ width: d.width, height: d.height, dpi: d.dpi, background: d.background, elements: d.elements });
+  return JSON.stringify({ width: d.width, height: d.height, dpi: d.dpi, pages: d.pages });
 }
 
 export function resetHistory() {
@@ -167,7 +196,7 @@ export function resetHistory() {
 export function commit() {
   const s = snapshot();
   if (s === lastSnap) return;
-  if (lastSnap) undoStack.push(lastSnap);
+  if (lastSnap) undoStack.push({ s: lastSnap, page: state.doc.pageIndex });
   if (undoStack.length > MAX_HISTORY) undoStack.shift();
   redoStack.length = 0;
   lastSnap = s;
@@ -175,14 +204,18 @@ export function commit() {
   emit('history');
 }
 
-function restore(s) {
+function restore(s, page) {
   const o = JSON.parse(s);
+  const pageChanged = page !== state.doc.pageIndex;
   Object.assign(state.doc, o);
+  state.doc.pageIndex = Math.max(0, Math.min(page, state.doc.pages.length - 1));
   lastSnap = s;
   state.selection = state.selection.filter((id) => getById(id));
   state.editingTextId = null;
   state.cropId = null;
   markDirty();
+  emit('pages');
+  if (pageChanged) emit('page');
   emit('doc');
   emit('selection');
   emit('history');
@@ -193,10 +226,16 @@ export function undo() {
   // ett eget steg, så att Ctrl+Z ångrar just dem och inte steget före.
   commit();
   if (!undoStack.length) return;
-  redoStack.push(lastSnap);
-  restore(undoStack.pop());
+  const step = undoStack.pop();
+  redoStack.push({ s: lastSnap, page: step.page });
+  restore(step.s, step.page);
 }
-export function redo() { if (!redoStack.length) return; undoStack.push(lastSnap); restore(redoStack.pop()); }
+export function redo() {
+  if (!redoStack.length) return;
+  const step = redoStack.pop();
+  undoStack.push({ s: lastSnap, page: step.page });
+  restore(step.s, step.page);
+}
 export const canUndo = () => undoStack.length > 0;
 export const canRedo = () => redoStack.length > 0;
 
@@ -212,6 +251,8 @@ export function loadDoc(d, { fileName, filePath } = {}) {
   if (filePath !== undefined) state.filePath = filePath;
   resetHistory();
   state.dirty = false;
+  emit('pages');
+  emit('page');
   emit('doc:replaced');
   emit('doc');
   emit('selection');
@@ -225,9 +266,11 @@ export function usedAssetIds() {
     if (e.type === 'image') { used.add(e.assetId); if (e.maskAssetId) used.add(e.maskAssetId); }
     if (e.type === 'group') walk(e.children);
   });
-  walk(state.doc.elements);
-  const bg = state.doc.background.image;
-  if (bg) { used.add(bg.assetId); if (bg.maskAssetId) used.add(bg.maskAssetId); }
+  for (const p of state.doc.pages) {
+    walk(p.elements);
+    const bg = p.background.image;
+    if (bg) { used.add(bg.assetId); if (bg.maskAssetId) used.add(bg.maskAssetId); }
+  }
   return used;
 }
 
@@ -236,17 +279,29 @@ export function serializeDoc() {
   const used = usedAssetIds();
   const assets = {};
   for (const id of used) if (d.assets[id]) assets[id] = d.assets[id];
-  return JSON.stringify({ app: 'motiv', version: 1, doc: { ...d, assets } });
+  return JSON.stringify({ app: 'motiv', version: 2, doc: { ...d, version: 2, assets } });
 }
 
 export function parseDoc(text) {
   const o = JSON.parse(text);
   const d = o.doc || o;
-  if (!d || !Array.isArray(d.elements) || !d.width) throw new Error('Filen är inte ett Motiv-projekt');
+  if (!d || !d.width || !(Array.isArray(d.pages) || Array.isArray(d.elements))) throw new Error('Filen är inte ett Motiv-projekt');
+  // Version 1 (en sida) blir ett dokument med en sida
+  if (!Array.isArray(d.pages)) {
+    d.pages = [{ id: uid('p'), elements: d.elements, background: d.background }];
+    delete d.elements;
+    delete d.background;
+  }
+  for (const p of d.pages) {
+    p.id ||= uid('p');
+    p.elements ||= [];
+    p.background ||= { fill: { type: 'solid', color: '#ffffff' }, image: null };
+  }
+  if (!d.pages.length) d.pages.push(newPage());
+  d.version = 2;
   d.assets ||= {};
-  d.background ||= { fill: { type: 'solid', color: '#ffffff' }, image: null };
   d.dpi ||= 300;
-  return d;
+  return attachPageAccessors(d);
 }
 
 /** Nya id:n för en kopia (rekursivt för grupper). */

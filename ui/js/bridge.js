@@ -33,6 +33,28 @@ export async function saveBlob(blob, defaultName, filters) {
   return defaultName;
 }
 
+/**
+ * Sparar flera filer (t.ex. en bild per sida). Skrivbordsappen frågar efter
+ * namn och plats en gång och numrerar filerna: Design-1.png, Design-2.png …
+ * I webbläsaren laddas de ned var för sig. Returnerar antal sparade, 0 om avbrutet.
+ */
+export async function saveBlobs(blobs, defaultName, filters) {
+  const ext = defaultName.slice(defaultName.lastIndexOf('.'));
+  const numbered = (base, i) => `${base}-${i + 1}${ext}`;
+  if (isTauri) {
+    const path = await invoke('save_file_dialog', { defaultName, filters });
+    if (!path) return 0;
+    const base = path.endsWith(ext) ? path.slice(0, -ext.length) : path;
+    for (const [i, b] of blobs.entries()) {
+      await invoke('write_binary_file', { path: numbered(base, i), data: dataURLToBase64(await blobToDataURL(b)) });
+    }
+    return blobs.length;
+  }
+  const base = defaultName.slice(0, -ext.length);
+  for (const [i, b] of blobs.entries()) await saveBlob(b, numbered(base, i), filters);
+  return blobs.length;
+}
+
 /** Sparar text. Om path anges skrivs filen direkt utan dialog. */
 export async function saveText(text, defaultName, filters, path = null) {
   if (isTauri) {

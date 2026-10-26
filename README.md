@@ -58,13 +58,15 @@ Skriptet installerar systempaket, Rust och Tauri CLI vid behov och lägger
 - Ångra/gör om (150 steg), kopiera/klistra, Alt+dra för att duplicera
 - Format för tryck (A-serien, affischer) och sociala medier, eller egen storlek
   i px/mm/cm/tum med valfri dpi
-- 4 startmallar
+- **Flera sidor** per design: sidremsa med förhandsbilder, lägg till, duplicera,
+  ta bort och dra för att ändra ordning; samma bakgrund på alla sidor med ett klick
+- 21 startmallar i fem kategorier, som kan ersätta designen eller läggas till som ny sida
 
 **Export**
-- PNG, JPG och WebP (0,5×–4×, genomskinlig bakgrund)
-- **PDF för tryck** med vektortext, utfall (bleed) och skärmärken, eller
-  rastrerad PDF för exakt utseende
-- SVG med inbäddade fonter
+- PNG, JPG och WebP (0,5×–4×, genomskinlig bakgrund), en sida eller en fil per sida
+- **PDF för tryck** med alla sidor i en fil, vektortext, utfall (bleed) och
+  skärmärken, eller rastrerad PDF för exakt utseende
+- SVG med inbäddade fonter (en sida)
 - Projektfiler (`.motiv`; äldre `.ediholio`-filer går också att öppna) med allt redigerbart, plus autosparning
 
 ## Kortkommandon
@@ -81,6 +83,8 @@ Skriptet installerar systempaket, Rust och Tauri CLI vid behov och lägger
 | Ctrl+L | Lås/lås upp |
 | T / R / O / L | Ny text / rektangel / ellips / linje |
 | Pilar (Shift = 10×) | Flytta markerat |
+| Ctrl+Enter | Ny sida |
+| Page Up / Page Down | Föregående / nästa sida |
 | Mellanslag+dra, mitthjul | Panorera |
 | Ctrl+hjul, Ctrl+0, Ctrl+1 | Zooma, anpassa, 100 % |
 | Shift vid dra | Lås riktning / fri skalning |
@@ -95,6 +99,7 @@ ui/                    Gränssnittet (laddas direkt av Tauri, inget byggsteg)
   css/app.css
   js/
     main.js            Start, menyer, kortkommandon, fil, autosparning
+    pages.js           Sidor: sidremsan och sidåtgärder
     editor.js          Canvas: rendering, markering, transformering, text/krop
     state.js           Dokumentmodell, händelser, ångra/gör om
     render.js          Rendering (delas av editor och rasterexport)

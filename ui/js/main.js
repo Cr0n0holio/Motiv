@@ -1,7 +1,8 @@
 // Motiv – start och sammankoppling.
 import {
-  state, on, emit, commit, undo, redo, canUndo, canRedo, select, selected, single, newDoc, loadDoc, serializeDoc, parseDoc, getById,
+  state, on, emit, commit, undo, redo, canUndo, canRedo, select, selected, single, newDoc, loadDoc, serializeDoc, parseDoc, getById, allElements,
 } from './state.js';
+import { initPageBar, goToPage, addPage, duplicatePage, deletePage, pageCount, currentPage } from './pages.js';
 import { h, blobToDataURL, debounce } from './util.js';
 import { isTauri, invoke, saveText, openText } from './bridge.js';
 import {
@@ -70,6 +71,12 @@ function buildTopbar() {
     ['Markera allt', 'Ctrl+A', A.selectAll],
     ['Gruppera', 'Ctrl+G', A.groupSelection, state.selection.length < 2],
     ['Dela upp grupp', 'Ctrl+Shift+G', A.ungroupSelection, !selected().some((e) => e.type === 'group')],
+    null,
+    ['Ny sida', 'Ctrl+Enter', () => addPage()],
+    ['Duplicera sida', '', () => duplicatePage()],
+    ['Ta bort sida', '', () => deletePage(), pageCount() <= 1],
+    ['Föregående sida', 'Page Up', () => goToPage(currentPage() - 1), currentPage() === 0],
+    ['Nästa sida', 'Page Down', () => goToPage(currentPage() + 1), currentPage() >= pageCount() - 1],
   ]));
 
   on('history', () => { undoBtn.disabled = !canUndo(); redoBtn.disabled = !canRedo(); });
@@ -159,7 +166,7 @@ const OPEN_FILTER = [{ name: 'Motiv-projekt', extensions: ['motiv', 'ediholio'] 
 const PROJECT_EXT = /\.(motiv|ediholio)$/i;
 
 async function confirmDiscard() {
-  if (!state.dirty || !state.doc.elements.length) return true;
+  if (!state.dirty || !allElements().length) return true;
   return confirmDialog('Osparade ändringar', 'Du har ändringar som inte är sparade. Vill du fortsätta ändå?', { ok: 'Fortsätt utan att spara', danger: true });
 }
 
@@ -185,11 +192,11 @@ async function loadProjectText(text, name, path) {
   clearImageCaches();
   loadDoc(d, { fileName: name.replace(PROJECT_EXT, ''), filePath: path });
   await ensureAllImages();
-  await ensureDocFonts(d.elements);
+  await ensureDocFonts(allElements(d));
   A.relayoutAllText();
   emit('doc');
   toast(`Öppnade ${name}`, 'ok');
-  const missing = missingFamilies(d.elements);
+  const missing = missingFamilies(allElements(d));
   if (missing.length) {
     toast(`Fonter som saknas på den här datorn: ${missing.join(', ')}. Texten visas med en ersättningsfont tills du lägger till dem via fontväljaren (Lägg till fontfil…).`, 'error', { timeout: 12000 });
   }
@@ -236,7 +243,7 @@ function setupCloseGuard() {
   let closing = false;
   win.onCloseRequested(async (e) => {
     finishTextEdit();
-    if (closing || !state.dirty || !state.doc.elements.length) return;
+    if (closing || !state.dirty || !allElements().length) return;
     e.preventDefault();
     const choice = await askSaveBeforeClose();
     if (choice === 'cancel') return;
@@ -301,12 +308,15 @@ function onKey(e) {
       '0': fitToScreen, '1': () => zoomTo(1), '+': () => zoomBy(1.25), '=': () => zoomBy(1.25), '-': () => zoomBy(1 / 1.25),
       ']': () => A.arrange(e.shiftKey ? 'front' : 'forward'), '[': () => A.arrange(e.shiftKey ? 'back' : 'backward'),
       '}': () => A.arrange('front'), '{': () => A.arrange('back'),
+      Enter: () => addPage(),
     };
     if (map[lower]) { e.preventDefault(); map[lower](); }
     return; // Ctrl+V hanteras av paste-händelsen
   }
   switch (k) {
     case 'Delete': case 'Backspace': e.preventDefault(); A.deleteSelection(); break;
+    case 'PageUp': e.preventDefault(); goToPage(currentPage() - 1); break;
+    case 'PageDown': e.preventDefault(); goToPage(currentPage() + 1); break;
     case 'Escape': closeColorPicker(); closeFontPicker(); hideMenu(); select([]); break;
     case 'Enter': { const el = single(); if (el?.type === 'text') { e.preventDefault(); startTextEdit(el, true); } else if (el?.type === 'image') { e.preventDefault(); startCrop(el); } break; }
     case 'ArrowLeft': case 'ArrowRight': case 'ArrowUp': case 'ArrowDown': {
@@ -394,6 +404,7 @@ async function boot() {
   initEditor($('#stage'));
   initLeftPanel($('#rail'), $('#leftpanel'));
   initProperties($('#rightpanel'));
+  initPageBar($('#pagebar'), showMenu);
   buildZoomBar();
   setupDrop();
   setContextMenuHider(hideMenu);

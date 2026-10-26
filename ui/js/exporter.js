@@ -1,25 +1,26 @@
 // Exportdialog: PNG / JPG / WebP / PDF (vektor eller raster) / SVG.
-import { state } from './state.js';
+// PDF kan innehålla alla sidor; bilder blir en fil per sida; SVG är en sida.
+import { state, pageView, allElements } from './state.js';
 import { h, canvasToBlob, round } from './util.js';
 import { modal, toast } from './dialogs.js';
 import { renderDoc, drawBackground } from './render.js';
 import { buildSVG, rasterSVG } from './svgexport.js';
 import { ensureAllImages } from './images.js';
 import { ensureDocFonts } from './fonts.js';
-import { isTauri, invoke, saveBlob } from './bridge.js';
+import { isTauri, invoke, saveBlob, saveBlobs } from './bridge.js';
 import { finishTextEdit, finishCrop } from './editor.js';
 
-let last = { format: 'png', scale: 1, quality: 92, transparent: false, bleed: 3, marks: true, raster: false };
+let last = { format: 'png', scale: 1, quality: 92, transparent: false, bleed: 3, marks: true, raster: false, pages: 'all' };
 try { Object.assign(last, JSON.parse(localStorage.getItem('motiv.export') || '{}')); } catch { /* ignore */ }
 
 const MAX_SIDE = 16000;
 const safeName = () => (state.fileName || 'design').replace(/\.(motiv|ediholio)$/i, '').replace(/[\\/:*?"<>|]+/g, '_');
 
-/** Renderar dokumentet (ev. med utfall) till en canvas i given skala. */
-export async function renderExportCanvas(scale, { transparent = false, bleedPx = 0, background = null } = {}) {
+/** Renderar en sida (ev. med utfall) till en canvas i given skala. */
+export async function renderExportCanvas(scale, { transparent = false, bleedPx = 0, background = null, page = state.doc.pageIndex } = {}) {
   await ensureAllImages();
-  await ensureDocFonts(state.doc.elements);
-  const d = state.doc;
+  await ensureDocFonts(allElements());
+  const d = pageView(state.doc, page);
   const W = Math.round((d.width + bleedPx * 2) * scale), H = Math.round((d.height + bleedPx * 2) * scale);
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
@@ -37,6 +38,7 @@ export function openExportDialog() {
   finishCrop(true);
   const d = state.doc;
   const o = { ...last };
+  const n = d.pages.length;
 
   const fmtSeg = h('div', { class: 'seg wide export-formats' });
   const FORMATS = [['png', 'PNG'], ['jpg', 'JPG'], ['webp', 'WebP'], ['pdf', 'PDF'], ['svg', 'SVG']];
@@ -48,6 +50,13 @@ export function openExportDialog() {
     FORMATS.forEach(([k, l]) => fmtSeg.append(h('button', { class: o.format === k ? 'active' : '', onclick: () => { o.format = k; render(); } }, l)));
     opts.innerHTML = '';
     const raster = ['png', 'jpg', 'webp'].includes(o.format);
+    // Vilka sidor (bara när det finns fler än en, och inte för SVG)
+    if (n > 1 && o.format !== 'svg') {
+      const pageSel = h('div', { class: 'seg wide' },
+        [['all', `Alla sidor (${n})`], ['current', `Den här sidan (${d.pageIndex + 1})`]].map(([k, l]) => h('button', { class: o.pages === k ? 'active' : '', onclick: () => { o.pages = k; render(); } }, l)));
+      opts.append(h('div', { class: 'field' }, h('span', null, 'Sidor'), pageSel));
+    }
+    const many = n > 1 && o.pages === 'all';
     if (raster) {
       const scaleSel = h('div', { class: 'seg wide' }, [0.5, 1, 2, 3, 4].map((s) => h('button', { class: o.scale === s ? 'active' : '', onclick: () => { o.scale = s; render(); } }, `${s}×`)));
       opts.append(h('div', { class: 'field' }, h('span', null, 'Storlek'), scaleSel));
@@ -62,7 +71,7 @@ export function openExportDialog() {
         opts.append(h('label', { class: 'check' }, t, 'Genomskinlig bakgrund'));
       }
       const W = Math.round(d.width * o.scale), H = Math.round(d.height * o.scale);
-      info.textContent = `${W} × ${H} px` + (W > MAX_SIDE || H > MAX_SIDE ? ' – för stort, minska storleken' : '');
+      info.textContent = `${W} × ${H} px` + (many ? ` · ${n} filer (${safeName()}-1 … ${safeName()}-${n})` : '') + (W > MAX_SIDE || H > MAX_SIDE ? ' – för stort, minska storleken' : '');
     } else if (o.format === 'pdf') {
       const bleed = h('input', { class: 'num-input', type: 'number', min: 0, max: 20, step: 0.5, value: o.bleed });
       bleed.addEventListener('change', () => { o.bleed = Math.max(0, +bleed.value || 0); });
@@ -75,11 +84,11 @@ export function openExportDialog() {
         h('p', { class: 'muted small' }, 'Vektor-PDF behåller text och former skarpa i alla storlekar. Utfallet fylls med bakgrunden och element som sticker ut över kanten.'),
       );
       const mm = (px) => round((px / d.dpi) * 25.4, 1);
-      info.textContent = `${mm(d.width)} × ${mm(d.height)} mm (${d.dpi} dpi)`;
+      info.textContent = `${mm(d.width)} × ${mm(d.height)} mm (${d.dpi} dpi)` + (many ? ` · ${n} sidor i en fil` : '');
       if (!isTauri) info.textContent += ' – PDF kräver skrivbordsappen';
     } else {
       opts.append(h('p', { class: 'muted small' }, 'SVG kan öppnas och redigeras vidare i t.ex. Inkscape, Illustrator eller Figma. Bilder och filtereffekter bäddas in. Egna och nedladdade fonter bäddas in.'));
-      info.textContent = `${d.width} × ${d.height}`;
+      info.textContent = `${d.width} × ${d.height}` + (n > 1 ? ` · sida ${d.pageIndex + 1} (SVG rymmer en sida)` : '');
     }
   };
   render();
@@ -95,7 +104,7 @@ export function openExportDialog() {
           btn.textContent = 'Exporterar…';
           last = { ...o };
           try { localStorage.setItem('motiv.export', JSON.stringify(last)); } catch { /* ignore */ }
-          await doExport(o);
+          await doExport(o, (txt) => { btn.textContent = txt; });
           return true;
         },
       },
@@ -103,38 +112,55 @@ export function openExportDialog() {
   });
 }
 
-async function doExport(o) {
+async function doExport(o, progress) {
   const d = state.doc;
   const name = safeName();
+  const list = d.pages.length > 1 && o.pages === 'all' && o.format !== 'svg' ? d.pages.map((_, i) => i) : [d.pageIndex];
+  const step = (i) => { if (list.length > 1) progress(`Sida ${i + 1} av ${list.length}…`); };
   if (['png', 'jpg', 'webp'].includes(o.format)) {
     let scale = o.scale;
     const maxS = Math.min(MAX_SIDE / d.width, MAX_SIDE / d.height);
     if (scale > maxS) { scale = maxS; toast('Storleken begränsades till max 16000 px', 'info'); }
     const transparent = o.transparent && o.format !== 'jpg';
-    const c = await renderExportCanvas(scale, { transparent, background: o.format === 'jpg' ? '#ffffff' : null });
     const mime = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' }[o.format];
-    const blob = await canvasToBlob(c, mime, o.format === 'png' ? undefined : o.quality / 100);
     const ext = o.format;
-    const path = await saveBlob(blob, `${name}.${ext}`, [{ name: ext.toUpperCase(), extensions: [ext] }]);
-    if (path) toast(`Sparad: ${path.split(/[\\/]/).pop()}`, 'ok');
+    const filters = [{ name: ext.toUpperCase(), extensions: [ext] }];
+    const blobs = [];
+    for (const [k, page] of list.entries()) {
+      step(k);
+      const c = await renderExportCanvas(scale, { transparent, background: o.format === 'jpg' ? '#ffffff' : null, page });
+      blobs.push(await canvasToBlob(c, mime, o.format === 'png' ? undefined : o.quality / 100));
+    }
+    if (blobs.length > 1) {
+      const saved = await saveBlobs(blobs, `${name}.${ext}`, filters);
+      if (saved) toast(`${saved} bilder sparade (${name}-1 … ${name}-${saved})`, 'ok');
+    } else {
+      const path = await saveBlob(blobs[0], `${name}.${ext}`, filters);
+      if (path) toast(`Sparad: ${path.split(/[\/]/).pop()}`, 'ok');
+    }
   } else if (o.format === 'svg') {
-    const svg = await buildSVG(d, { embedFonts: true, imgScale: 1 });
+    const svg = await buildSVG(pageView(d, d.pageIndex), { embedFonts: true, imgScale: 1 });
     const path = await saveBlob(new Blob([svg], { type: 'image/svg+xml' }), `${name}.svg`, [{ name: 'SVG', extensions: ['svg'] }]);
-    if (path) toast(`Sparad: ${path.split(/[\\/]/).pop()}`, 'ok');
+    if (path) toast(`Sparad: ${path.split(/[\/]/).pop()}`, 'ok');
   } else if (o.format === 'pdf') {
     if (!isTauri) throw new Error('PDF-export kräver skrivbordsappen');
     const path = await invoke('save_file_dialog', { defaultName: `${name}.pdf`, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
     if (!path) return;
     const bleedPx = (o.bleed / 25.4) * d.dpi;
-    let svg;
-    if (o.raster) {
-      const c = await renderExportCanvas(1, { bleedPx });
-      svg = rasterSVG(c.toDataURL('image/jpeg', 0.95), d, { bleedMm: o.bleed, cropMarks: o.marks });
-    } else {
-      await ensureDocFonts(d.elements);
-      svg = await buildSVG(d, { forPdf: true, bleedMm: o.bleed, cropMarks: o.marks, imgScale: 1 });
+    await ensureDocFonts(allElements());
+    const svgs = [];
+    for (const [k, page] of list.entries()) {
+      step(k);
+      const pv = pageView(d, page);
+      if (o.raster) {
+        const c = await renderExportCanvas(1, { bleedPx, page });
+        svgs.push(rasterSVG(c.toDataURL('image/jpeg', 0.95), pv, { bleedMm: o.bleed, cropMarks: o.marks }));
+      } else {
+        svgs.push(await buildSVG(pv, { forPdf: true, bleedMm: o.bleed, cropMarks: o.marks, imgScale: 1 }));
+      }
     }
-    await invoke('export_pdf', { path, svg });
-    toast(`PDF sparad: ${path.split(/[\\/]/).pop()}`, 'ok');
+    progress('Skapar PDF…');
+    await invoke('export_pdf', { path, svgs });
+    toast(`PDF sparad: ${path.split(/[\/]/).pop()}` + (svgs.length > 1 ? ` (${svgs.length} sidor)` : ''), 'ok');
   }
 }

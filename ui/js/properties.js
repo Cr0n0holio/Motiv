@@ -12,6 +12,7 @@ import { FILTER_PRESETS, getProcessed, ensureImage } from './images.js';
 import { MASK_SHAPES, maskD, isOpenShape } from './shapes.js';
 import { openBgRemoval, restoreBackground } from './bgremoval.js';
 import { pickImages } from './bridge.js';
+import { addPage, duplicatePage, deletePage, backgroundToAllPages, pageCount, currentPage } from './pages.js';
 import { loadImage, debounce } from './util.js';
 
 let host;
@@ -23,6 +24,7 @@ export function initProperties(el) {
   on('selection', rebuild);
   on('crop', rebuild);
   on('doc:replaced', rebuild);
+  on('pages', () => { if (!state.selection.length) rebuild(); });
   on('doc', () => { if (structureChanged()) rebuild(); else B.refresh(); });
   on('doc:live', () => B.refresh());
   on('fonts', () => B.refresh());
@@ -89,7 +91,14 @@ function pagePanel() {
   const mm = (px) => round((px / d.dpi) * 25.4, 0);
   const bgImg = d.background.image;
   return h('div', null,
-    h('div', { class: 'panel-head' }, h('div', { class: 'ph-title' }, h('span', { class: 'ph-type' }, 'Sida'))),
+    h('div', { class: 'panel-head' }, h('div', { class: 'ph-title' }, h('span', { class: 'ph-type' }, pageCount() > 1 ? `Sida ${currentPage() + 1} av ${pageCount()}` : 'Sida'))),
+    section('Sidor',
+      h('div', { class: 'btn-grid two' },
+        h('button', { class: 'btn', title: 'Ny tom sida efter den här (Ctrl+Enter)', onclick: () => addPage() }, icon('plus'), 'Ny sida'),
+        h('button', { class: 'btn', title: 'Kopia av den här sidan', onclick: () => duplicatePage() }, icon('copy'), 'Duplicera'),
+      ),
+      pageCount() > 1 ? h('button', { class: 'btn full danger-ghost', onclick: () => deletePage() }, icon('trash'), 'Ta bort sidan') : null,
+    ),
     section('Storlek',
       h('div', { class: 'info-line' }, h('b', null, `${d.width} × ${d.height} px`), h('span', { class: 'muted' }, ` · ${mm(d.width)} × ${mm(d.height)} mm vid ${d.dpi} dpi`)),
       h('button', { class: 'btn full', onclick: () => emit('open-tab', 'format') }, icon('layout'), 'Ändra storlek'),
@@ -108,11 +117,12 @@ function pagePanel() {
           h('button', { class: 'btn danger-ghost', onclick: () => { d.background.image = null; emit('doc'); commit(); } }, 'Ta bort bild'),
         ),
       ) : h('p', { class: 'muted small' }, 'Tips: högerklicka på en bild och välj "Använd som bakgrund".'),
+      pageCount() > 1 ? h('button', { class: 'btn full', title: 'Kopiera den här sidans bakgrund till alla sidor', onclick: backgroundToAllPages }, icon('bg'), 'Använd på alla sidor') : null,
       h('button', { class: 'btn full ghost', onclick: () => emit('open-tab', 'background') }, icon('palette'), 'Fler bakgrunder'),
     ),
     section('Kortkommandon',
       h('div', { class: 'shortcuts' },
-        ...[['T', 'Ny text'], ['Dubbelklick', 'Redigera text / beskär bild'], ['Ctrl + D', 'Duplicera'], ['Alt + dra', 'Duplicera och flytta'], ['Shift + dra', 'Lås riktning / proportioner'], ['Ctrl + dra', 'Utan fästlinjer'], ['Mellanslag + dra', 'Panorera'], ['Ctrl + hjul', 'Zooma'], ['Ctrl + G', 'Gruppera'], ['Ctrl + 0', 'Anpassa till fönster']].map(([k, t]) => h('div', null, h('kbd', null, k), h('span', null, t))),
+        ...[['T', 'Ny text'], ['Dubbelklick', 'Redigera text / beskär bild'], ['Ctrl + D', 'Duplicera'], ['Alt + dra', 'Duplicera och flytta'], ['Shift + dra', 'Lås riktning / proportioner'], ['Ctrl + dra', 'Utan fästlinjer'], ['Mellanslag + dra', 'Panorera'], ['Ctrl + hjul', 'Zooma'], ['Ctrl + G', 'Gruppera'], ['Ctrl + 0', 'Anpassa till fönster'], ['Ctrl + Enter', 'Ny sida'], ['Page Up / Down', 'Byt sida']].map(([k, t]) => h('div', null, h('kbd', null, k), h('span', null, t))),
       ),
     ),
   );
