@@ -148,7 +148,7 @@ pub async fn download_google_font(app: AppHandle, family: String) -> Result<Vec<
     // Utan webbläsar-User-Agent levererar Google Fonts TTF-filer,
     // vilket både webbvyn och PDF-motorn kan läsa.
     let client = reqwest::Client::builder()
-        .user_agent("Motiv/0.1")
+        .user_agent(concat!("Motiv/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(err)?;
 

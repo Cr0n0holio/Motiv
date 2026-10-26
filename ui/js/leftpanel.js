@@ -9,6 +9,7 @@ import { paintCss, GRADIENT_PRESETS } from './paint.js';
 import { drawText, layoutText, syncTextBox } from './text.js';
 import { ensureFamily, ensureDocFonts } from './fonts.js';
 import { renderElementThumb } from './render.js';
+import { shrinkEnabled, setShrinkEnabled } from './images.js';
 import { pickImages } from './bridge.js';
 import { toast, modal } from './dialogs.js';
 import { openColorPicker } from './colorpicker.js';
@@ -319,6 +320,9 @@ builders.uploads = () => {
     h('div', { class: 'lp-section' },
       h('button', { class: 'btn primary full big', onclick: uploadImages }, icon('upload'), 'Ladda upp bilder'),
       h('div', { class: 'drop-hint' }, 'Du kan också dra in bilder från Utforskaren eller klistra in med Ctrl+V.'),
+      h('label', { class: 'check', title: 'Foton med fler pixlar än designen behöver krymps när de läggs till. Det gör projektfilen mindre och appen snabbare, utan synlig skillnad.' },
+        h('input', { type: 'checkbox', checked: shrinkEnabled(), onchange: (e) => setShrinkEnabled(e.target.checked) }),
+        'Krymp stora foton automatiskt'),
     ),
     h('div', { class: 'lp-section' }, h('h4', null, 'I den här designen'), grid.children.length ? grid : h('p', { class: 'muted small' }, 'Inga bilder ännu.')),
   );

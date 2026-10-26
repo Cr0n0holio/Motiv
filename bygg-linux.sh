@@ -22,6 +22,8 @@ if [ ${#SAKNAS[@]} -gt 0 ]; then
   sudo apt-get install -y "${SAKNAS[@]}"
 fi
 
+# Rust installeras i ~/.cargo, som inte alltid finns i PATH när skriptet körs via wsl
+[ -f "$HOME/.cargo/env" ] && source "$HOME/.cargo/env"
 if ! command -v cargo >/dev/null 2>&1; then
   echo "==> Installerar Rust..."
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
@@ -41,10 +43,13 @@ export CARGO_TARGET_DIR="$HOME/.cache/motiv-target"
 export APPIMAGE_EXTRACT_AND_RUN=1
 
 echo "==> Bygger Motiv..."
+# Paket från tidigare versioner ska inte följa med
+rm -rf "$CARGO_TARGET_DIR/release/bundle"
 cd "$PROJEKT/src-tauri"
 cargo tauri build --bundles deb appimage
 
 UT="$PROJEKT/dist/linux"
+rm -rf "$UT"
 mkdir -p "$UT"
 cp "$CARGO_TARGET_DIR"/release/bundle/deb/*.deb "$UT"/
 cp "$CARGO_TARGET_DIR"/release/bundle/appimage/*.AppImage "$UT"/

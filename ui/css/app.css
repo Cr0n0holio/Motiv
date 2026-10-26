@@ -373,3 +373,4 @@ input[type="number"]::-webkit-inner-spin-button { opacity: .4; }
 .pg-add { flex: none; width: 44px; height: 62px; margin-bottom: 19px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; border: 1.5px dashed var(--line-2); background: transparent; color: var(--text-2); }
 .pg-add:hover { border-color: var(--accent); color: var(--text); background: rgba(139,92,246,.08); }
 .pg-drop { position: absolute; top: 14px; bottom: 30px; width: 3px; border-radius: 2px; background: var(--accent); pointer-events: none; }
+.drop-hint + .check { margin-top: 12px; }

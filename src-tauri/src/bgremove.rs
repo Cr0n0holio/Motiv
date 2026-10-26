@@ -117,7 +117,7 @@ pub async fn bg_download_model(app: AppHandle, id: String) -> Result<(), String>
     }
     let part = path.with_extension("part");
     let client = reqwest::Client::builder()
-        .user_agent("Motiv/0.1")
+        .user_agent(concat!("Motiv/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(err)?;
     let mut resp = client

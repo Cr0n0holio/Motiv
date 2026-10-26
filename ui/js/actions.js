@@ -5,6 +5,7 @@ import {
 import { uid, rotatePt, deepClone, loadImage, clamp } from './util.js';
 import { syncTextBox, layoutText } from './text.js';
 import { ensureTextFont } from './fonts.js';
+import { shrinkImage, shrinkEnabled } from './images.js';
 
 // ---------- Geometri ----------
 export function corners(el) {
@@ -97,13 +98,31 @@ export function addShape(kind, { dash = null, fill = null, at = null } = {}) {
   return addElement(el, { at });
 }
 
+/** Lägger till en bild i designen; en bild som redan finns återanvänds. */
 export async function addAsset(dataURL) {
+  for (const [id, v] of Object.entries(state.doc.assets)) if (v.length === dataURL.length && v === dataURL) return id;
   const id = uid('a');
   state.doc.assets[id] = dataURL;
   return id;
 }
 
+/**
+ * Krymper ett nytt foto om det har mycket fler pixlar än designen behöver
+ * (kan stängas av i Bilder-panelen). Gränsen är designens längsta sida,
+ * dock minst 2560 px så att det finns marginal för beskärning.
+ */
+export async function prepareUpload(dataURL) {
+  if (!shrinkEnabled()) return dataURL;
+  const d = state.doc;
+  const r = await shrinkImage(dataURL, Math.max(2560, d.width, d.height));
+  if (!r) return dataURL;
+  const mb = (s) => (s.length * 0.75 / 1048576).toFixed(1).replace('.', ',');
+  emit('toast', { msg: `Bilden krymptes från ${r.from.join(' × ')} till ${r.to.join(' × ')} px (${mb(dataURL)} → ${mb(r.dataURL)} MB)`, type: 'info' });
+  return r.dataURL;
+}
+
 export async function addImageFromDataURL(dataURL, { at = null, name = 'Bild' } = {}) {
+  if (!Object.values(state.doc.assets).includes(dataURL)) dataURL = await prepareUpload(dataURL);
   const img = await loadImage(dataURL);
   const id = await addAsset(dataURL);
   const d = state.doc;

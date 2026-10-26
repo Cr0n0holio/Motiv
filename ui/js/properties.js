@@ -358,8 +358,9 @@ function imagePanel(el) {
           class: 'btn', onclick: async () => {
             const [img] = await pickImages();
             if (!img) return;
-            const im = await loadImage(img.dataURL);
-            const id = await A.addAsset(img.dataURL);
+            const url = await A.prepareUpload(img.dataURL);
+            const im = await loadImage(url);
+            const id = await A.addAsset(url);
             const e = first();
             // Behåll rutans storlek, fyll den som "cover"
             const r = im.naturalWidth / im.naturalHeight, rr = e.w / e.h;

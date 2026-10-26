@@ -191,6 +191,88 @@ export function coverCrop(sw, sh, w, h) {
   return { x: 0, y: (1 - ch) / 2, w: 1, h: ch };
 }
 
+// ---------- Genomskinlighet för klick ----------
+const alphaMaps = new Map(); // assetId|maskId -> { w, h, data }
+const ALPHA_SIZE = 256;
+
+/**
+ * Täckningen (0–255) i punkten (u, v) av en bild, där u och v är 0–1 över
+ * hela källbilden. Räknas på en nedskalad kopia som cachas. Ger 255 om
+ * bilden inte är laddad än, så att klick fungerar som vanligt under tiden.
+ */
+export function alphaAt(assetId, maskId, u, v) {
+  const key = assetId + '|' + (maskId || '');
+  let m = alphaMaps.get(key);
+  if (!m) {
+    const asset = state.doc.assets[assetId] || '';
+    // Foton utan AI-mask är alltid täckande
+    if (!maskId && asset.startsWith('data:image/jpeg')) return 255;
+    const src = sourceFor(assetId, maskId);
+    if (!src || (maskId && !getImage(maskId))) return 255;
+    const sw = src.naturalWidth || src.width, sh = src.naturalHeight || src.height;
+    const s = Math.min(1, ALPHA_SIZE / Math.max(sw, sh));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(sw * s));
+    c.height = Math.max(1, Math.round(sh * s));
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(src, 0, 0, c.width, c.height);
+    const rgba = x.getImageData(0, 0, c.width, c.height).data;
+    const data = new Uint8Array(c.width * c.height);
+    for (let i = 0; i < data.length; i++) data[i] = rgba[i * 4 + 3];
+    m = { w: c.width, h: c.height, data };
+    alphaMaps.set(key, m);
+  }
+  const px = clamp(Math.floor(u * m.w), 0, m.w - 1), py = clamp(Math.floor(v * m.h), 0, m.h - 1);
+  return m.data[py * m.w + px];
+}
+
+// ---------- Krympning av stora foton ----------
+const SHRINK_KEY = 'motiv.shrinkImages';
+export function shrinkEnabled() {
+  try { return localStorage.getItem(SHRINK_KEY) !== '0'; } catch { return true; }
+}
+export function setShrinkEnabled(on) {
+  try { localStorage.setItem(SHRINK_KEY, on ? '1' : '0'); } catch { /* ignore */ }
+}
+
+/** Har bilden några genomskinliga pixlar? (Undersöks i liten skala.) */
+function hasAlpha(img) {
+  const s = Math.min(1, 256 / Math.max(img.naturalWidth, img.naturalHeight));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(img.naturalWidth * s));
+  c.height = Math.max(1, Math.round(img.naturalHeight * s));
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.drawImage(img, 0, 0, c.width, c.height);
+  const a = x.getImageData(0, 0, c.width, c.height).data;
+  for (let i = 3; i < a.length; i += 4) if (a[i] < 250) return true;
+  return false;
+}
+
+/**
+ * Krymper ett foto som har fler pixlar än designen kan visa. Längsta sidan
+ * blir högst maxSide; foton sparas som JPEG, bilder med genomskinlighet som
+ * PNG. Vektorbilder (SVG) och GIF lämnas orörda, liksom allt där krympningen
+ * inte ger en mindre fil. Returnerar { dataURL, from, to } där from/to är
+ * pixelmåtten, eller null om bilden lämnades som den var.
+ */
+export async function shrinkImage(dataURL, maxSide) {
+  const mime = String(dataURL).slice(5, String(dataURL).indexOf(';'));
+  if (!/^image\/(jpeg|png|webp|bmp|avif)$/.test(mime)) return null;
+  const img = await loadImage(dataURL);
+  const w = img.naturalWidth, h = img.naturalHeight;
+  const k = maxSide / Math.max(w, h);
+  if (k >= 1) return null;
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * k);
+  c.height = Math.round(h * k);
+  const x = c.getContext('2d');
+  x.imageSmoothingQuality = 'high';
+  x.drawImage(img, 0, 0, c.width, c.height);
+  const out = mime !== 'image/jpeg' && hasAlpha(img) ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.9);
+  if (out.length >= dataURL.length) return null;
+  return { dataURL: out, from: [w, h], to: [c.width, c.height] };
+}
+
 export function clearImageCaches() {
   processed.clear();
   maskedCache.clear();

@@ -49,6 +49,7 @@ function buildTopbar() {
   fileBtn.addEventListener('click', () => showMenu(fileBtn, [
     ['Ny design', 'Ctrl+N', newDesign],
     ['Öppna…', 'Ctrl+O', openProject],
+    ...recentMenuItems(),
     null,
     ['Spara', 'Ctrl+S', () => saveProject(false)],
     ['Spara som…', 'Ctrl+Shift+S', () => saveProject(true)],
@@ -178,6 +179,43 @@ async function newDesign() {
   openTab('format');
 }
 
+// ---------------- Senaste filer ----------------
+// Bara i skrivbordsappen, där filerna har en sökväg som går att öppna igen.
+const RECENT_KEY = 'motiv.recentFiles';
+const MAX_RECENT = 8;
+const baseName = (p) => p.split(/[\\/]/).pop();
+function recentFiles() {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch { return []; }
+}
+function setRecentFiles(list) {
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, MAX_RECENT))); } catch { /* ignore */ }
+}
+function rememberFile(path) {
+  if (!isTauri || !path) return;
+  setRecentFiles([path, ...recentFiles().filter((p) => p !== path)]);
+}
+function recentMenuItems() {
+  const list = isTauri ? recentFiles() : [];
+  if (!list.length) return [];
+  return [
+    null,
+    ...list.map((p) => [baseName(p).replace(PROJECT_EXT, ''), '', () => openRecent(p)]),
+    ['Rensa listan', '', () => setRecentFiles([])],
+  ];
+}
+async function openRecent(path) {
+  if (!(await confirmDiscard())) return;
+  let text;
+  try {
+    text = await invoke('read_text_file', { path });
+  } catch {
+    setRecentFiles(recentFiles().filter((p) => p !== path));
+    toast(`Kunde inte öppna ${baseName(path)} – filen kan ha flyttats eller tagits bort. Den togs bort ur listan.`, 'error', { timeout: 7000 });
+    return;
+  }
+  try { await loadProjectText(text, baseName(path), path); } catch (e) { toast(`Kunde inte öppna filen: ${e.message || e}`, 'error'); }
+}
+
 async function openProject() {
   if (!(await confirmDiscard())) return;
   try {
@@ -191,6 +229,7 @@ async function loadProjectText(text, name, path) {
   const d = parseDoc(text);
   clearImageCaches();
   loadDoc(d, { fileName: name.replace(PROJECT_EXT, ''), filePath: path });
+  rememberFile(path);
   await ensureAllImages();
   await ensureDocFonts(allElements(d));
   A.relayoutAllText();
@@ -209,7 +248,8 @@ async function saveProject(saveAs) {
     const path = await saveText(text, `${state.fileName}.motiv`, FILTER, saveAs ? null : state.filePath);
     if (!path) return;
     state.filePath = isTauri ? path : null;
-    state.fileName = path.split(/[\\/]/).pop().replace(PROJECT_EXT, '');
+    state.fileName = baseName(path).replace(PROJECT_EXT, '');
+    rememberFile(state.filePath);
     state.dirty = false;
     emit('dirty');
     emit('doc:replaced');
@@ -254,10 +294,13 @@ function setupCloseGuard() {
   });
 }
 
-function about() {
+async function about() {
+  let version = '';
+  try { if (isTauri) version = `Version ${(await invoke('app_info')).version}`; } catch { /* ignore */ }
   modal({
     title: 'Om Motiv',
     body: h('div', null,
+      version ? h('p', null, h('b', null, version)) : null,
       h('p', null, 'Motiv är en Canva-inspirerad editor för posters och bilder, byggd med Rust (Tauri) och ett webbgränssnitt.'),
       h('p', { class: 'muted small' }, isTauri ? 'Skrivbordsläge: fonter, bakgrundsborttagning och PDF hanteras av Rust.' : 'Webbläsarläge: vissa funktioner (PDF, bakgrundsborttagning, systemfonter) kräver skrivbordsappen.'),
     ),

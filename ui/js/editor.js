@@ -5,7 +5,8 @@ import { rad, deg, rotatePt, clamp, deepClone } from './util.js';
 import { renderDoc, drawElement } from './render.js';
 import { layoutText, syncTextBox, isCurved, fontString, letterSpacingPx, textHitPad } from './text.js';
 import { aabb, unionBox, scaleProps, corners, duplicateSelection } from './actions.js';
-import { getImage, sourceSize } from './images.js';
+import { getImage, sourceSize, alphaAt } from './images.js';
+import { maskD } from './shapes.js';
 import { paintIsVisible } from './paint.js';
 
 let canvas, ctx, host, dpr = 1;
@@ -68,7 +69,9 @@ function resize() {
   canvas.height = Math.max(1, Math.round(r.height * dpr));
   canvas.style.width = r.width + 'px';
   canvas.style.height = r.height + 'px';
-  if (!state._fitted && r.width > 50) { state._fitted = true; fitToScreen(); }
+  // Tills användaren zoomar eller panorerar själv följer sidan med när
+  // fönstret ändrar storlek (t.ex. maximeras)
+  if ((!state._fitted || state._autoFit) && r.width > 50) { state._fitted = true; fitToScreen(); }
   requestRender();
 }
 
@@ -85,6 +88,7 @@ export function fitToScreen() {
   state.zoom = clamp(z, 0.02, 8);
   state.panX = (viewW() - state.doc.width * state.zoom) / 2;
   state.panY = (viewH() - state.doc.height * state.zoom) / 2;
+  state._autoFit = true;
   emit('zoom');
   requestRender();
   if (textarea) positionTextarea();
@@ -92,6 +96,7 @@ export function fitToScreen() {
 
 export function zoomTo(z, sx = viewW() / 2, sy = viewH() / 2) {
   z = clamp(z, 0.02, 16);
+  state._autoFit = false;
   const d = screenToDoc(sx, sy);
   state.zoom = z;
   state.panX = sx - d.x * z;
@@ -108,6 +113,7 @@ function onWheel(e) {
     const r = canvas.getBoundingClientRect();
     zoomTo(state.zoom * Math.exp(-e.deltaY * 0.0022), e.clientX - r.left, e.clientY - r.top);
   } else {
+    state._autoFit = false;
     state.panX -= e.shiftKey ? e.deltaY : e.deltaX;
     state.panY -= e.shiftKey ? 0 : e.deltaY;
     requestRender();
@@ -352,8 +358,25 @@ function hitElement(el, x, y) {
 
 export function hitTest(x, y) {
   const els = state.doc.elements;
-  for (let i = els.length - 1; i >= 0; i--) if (hitElement(els[i], x, y)) return els[i];
+  for (let i = els.length - 1; i >= 0; i--) if (hitElement(els[i], x, y) && !transparentAt(els[i], x, y)) return els[i];
   return null;
+}
+
+const shapeCtx = document.createElement('canvas').getContext('2d');
+
+/**
+ * Är bilden genomskinlig i punkten? Då går klicket igenom till det som ligger
+ * bakom – t.ex. runt en person vars bakgrund har tagits bort, eller utanför
+ * en cirkelformad bild.
+ */
+function transparentAt(el, x, y) {
+  if (el.type !== 'image') return false;
+  const l = toLocal(el, x, y);
+  if (l.x < 0 || l.y < 0 || l.x > el.w || l.y > el.h) return false; // i klickmarginalen
+  if (el.maskShape && el.maskShape !== 'none' && !shapeCtx.isPointInPath(new Path2D(maskD(el.maskShape, el.w, el.h, el.radius || 0)), l.x, l.y)) return true;
+  const sx = el.flipX ? el.w - l.x : l.x, sy = el.flipY ? el.h - l.y : l.y;
+  const c = el.crop || { x: 0, y: 0, w: 1, h: 1 };
+  return alphaAt(el.assetId, el.maskAssetId, c.x + (sx / el.w) * c.w, c.y + (sy / el.h) * c.h) < 16;
 }
 
 function hitHandle(f, sx, sy) {
@@ -468,6 +491,7 @@ function onMove(e) {
 
   switch (drag.type) {
     case 'pan':
+      state._autoFit = false;
       state.panX = drag.px + (e.clientX - drag.sx);
       state.panY = drag.py + (e.clientY - drag.sy);
       requestRender();

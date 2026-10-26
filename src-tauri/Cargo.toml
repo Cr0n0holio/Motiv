@@ -1,6 +1,6 @@
 [package]
 name = "motiv"
-version = "0.1.0"
+version = "0.2.0"
 description = "Motiv – en Canva-inspirerad editor för posters och bilder"
 authors = ["Micke"]
 edition = "2021"
