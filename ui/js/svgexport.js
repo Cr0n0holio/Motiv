@@ -2,7 +2,7 @@
 // med utfall (bleed) och skärmärken för tryck.
 import { round, rotatePt, escapeXml, parseColor } from './util.js';
 import { svgPaint, svgColorAttrs, paintIsVisible } from './paint.js';
-import { layoutText, isCurved, textPlatePad } from './text.js';
+import { layoutText, isCurved, textPlateRect } from './text.js';
 import { shapeD, isOpenShape, arrowHeadsD, lineD, maskD } from './shapes.js';
 import { getProcessed, ensureAllImages } from './images.js';
 import { bgImageProps } from './render.js';
@@ -72,9 +72,8 @@ function textSVG(el, X) {
 
   let out = `<g ${fontAttrs}${lsAttr}>`;
   if (el.background?.enabled) {
-    const { px, py, r } = textPlatePad(el);
-    const hh = L.h + py * 2;
-    out += `<rect x="${R(-px)}" y="${R(-py)}" width="${R(L.w + px * 2)}" height="${R(hh)}" rx="${R(Math.min(r, hh / 2))}" ${svgColorAttrs(el.background.color)}/>`;
+    const p = textPlateRect(el, L);
+    out += `<rect x="${R(p.x)}" y="${R(p.y)}" width="${R(p.w)}" height="${R(p.h)}" rx="${R(p.r)}" ${svgColorAttrs(el.background.color)}/>`;
   }
   if (el.glow?.enabled) {
     // Glöd = färgad, suddig kopia (två lager som i canvas)

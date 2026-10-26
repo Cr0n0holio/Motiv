@@ -10,7 +10,7 @@ import {
 } from './editor.js';
 import { initProperties } from './properties.js';
 import { initLeftPanel, openTab, uploadImages } from './leftpanel.js';
-import { initFonts, ensureDocFonts } from './fonts.js';
+import { initFonts, ensureDocFonts, missingFamilies } from './fonts.js';
 import { icon } from './controls.js';
 import { toast, modal, confirmDialog } from './dialogs.js';
 import { openExportDialog } from './exporter.js';
@@ -78,8 +78,12 @@ function buildTopbar() {
   undoBtn.disabled = redoBtn.disabled = true;
 }
 
+let shownTitle = '';
 function updateTitle() {
   const t = `${state.dirty ? '• ' : ''}${state.fileName} – Motiv`;
+  // Anropas vid varje musrörelse under drag – rör bara fönstret när titeln ändras
+  if (t === shownTitle) return;
+  shownTitle = t;
   document.title = t;
   if (isTauri) { try { window.__TAURI__.window?.getCurrentWindow?.().setTitle(t).catch(() => {}); } catch { /* ignore */ } }
 }
@@ -185,6 +189,10 @@ async function loadProjectText(text, name, path) {
   A.relayoutAllText();
   emit('doc');
   toast(`Öppnade ${name}`, 'ok');
+  const missing = missingFamilies(d.elements);
+  if (missing.length) {
+    toast(`Fonter som saknas på den här datorn: ${missing.join(', ')}. Texten visas med en ersättningsfont tills du lägger till dem via fontväljaren (Lägg till fontfil…).`, 'error', { timeout: 12000 });
+  }
 }
 
 async function saveProject(saveAs) {
@@ -364,10 +372,8 @@ function setupDrop() {
     if (assetId && state.doc.assets[assetId]) { await A.addImageFromDataURL(state.doc.assets[assetId], { at }); return; }
     const shape = e.dataTransfer.getData('application/x-motiv-shape');
     if (shape) {
-      const el = A.addShape(shape === 'dashed' || shape === 'dotted' ? 'line' : shape);
-      if (shape === 'dashed' || shape === 'dotted') el.stroke.dash = shape;
-      if (at) { el.x = at.x - el.w / 2; el.y = at.y - el.h / 2; }
-      emit('doc'); commit();
+      const dashed = shape === 'dashed' || shape === 'dotted';
+      A.addShape(dashed ? 'line' : shape, { dash: dashed ? shape : null, at });
       return;
     }
     const files = [...e.dataTransfer.files];

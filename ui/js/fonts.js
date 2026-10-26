@@ -130,6 +130,14 @@ export async function ensureDocFonts(els) {
   fontsChanged();
 }
 
+/** Fontfamiljer som används i elementen men inte finns på datorn (sorterade). */
+export function missingFamilies(els) {
+  const fams = new Set();
+  const walk = (list) => list.forEach((e) => { if (e.type === 'text') fams.add(e.fontFamily); if (e.type === 'group') walk(e.children); });
+  walk(els);
+  return [...fams].filter((f) => f && !isAvailable(f)).sort();
+}
+
 export function pushRecentFont(family) {
   fontState.recent = [family, ...fontState.recent.filter((f) => f !== family)].slice(0, 8);
   try { localStorage.setItem('motiv.recentFonts', JSON.stringify(fontState.recent)); } catch { /* ignore */ }

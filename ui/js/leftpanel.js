@@ -110,7 +110,7 @@ builders.format = () => {
     ...TEMPLATE_CATS.map((cat) => h('div', { class: 'lp-section' },
       h('h4', null, cat),
       h('div', { class: 'tpl-grid' }, TEMPLATES.filter((t) => t.cat === cat).map((t) => h('button', { class: 'tpl', title: `${t.name} – ${t.fmt}`, onclick: () => useTemplate(t) },
-        h('span', { class: 'tpl-thumb', style: { background: t.thumb } }, h('span', { class: 'tpl-t', style: t.tstyle || {} }, t.short)),
+        templateThumb(t),
         h('span', { class: 'tpl-name' }, t.name),
         h('span', { class: 'tpl-fmt muted small' }, t.fmt)))),
     )),
@@ -245,11 +245,11 @@ builders.elements = () => {
     h('div', { class: 'lp-section' }, h('h4', null, 'Linjer & pilar'), h('div', { class: 'shape-grid' },
       item('line', () => A.addShape('line')),
       item('arrow', () => A.addShape('arrow')),
-      item('dashed', () => { const e = A.addShape('line'); e.stroke.dash = 'dashed'; emit('doc'); commit(); }),
-      item('dotted', () => { const e = A.addShape('line'); e.stroke.dash = 'dotted'; emit('doc'); commit(); }),
+      item('dashed', () => A.addShape('line', { dash: 'dashed' })),
+      item('dotted', () => A.addShape('line', { dash: 'dotted' })),
     )),
     h('div', { class: 'lp-section' }, h('h4', null, 'Färgklickar'), h('div', { class: 'swatch-grid' }, GRADIENT_PRESETS.slice(0, 8).map((g) => h('button', {
-      class: 'big-swatch', style: { background: paintCss(g) }, onclick: () => { const e = A.addShape('blob', { fill: deepClone(g) }); e.fill = deepClone(g); emit('doc'); commit(); },
+      class: 'big-swatch', style: { background: paintCss(g) }, onclick: () => A.addShape('blob', { fill: deepClone(g) }),
     })))),
   );
 };
@@ -783,4 +783,22 @@ const TEMPLATES = [
 
 const TEMPLATE_CATS = ['Affischer', 'Sociala medier', 'Inbjudningar & kort', 'Planering', 'Jobb & företag'];
 
-export { createImage };
+/** Filnamn för mallens förhandsbild, t.ex. "Födelsedag" → "fodelsedag". */
+export const templateSlug = (t) => t.name.toLowerCase()
+  .replace(/[åä]/g, 'a').replace(/ö/g, 'o').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+/**
+ * Förhandsbilden är en färdigrenderad bild (ui/img/mallar, skapas med
+ * verktyg/mallbilder.py). Saknas den visas en enkel färgruta med text.
+ */
+function templateThumb(t) {
+  const fallback = h('span', { class: 'tpl-t', style: t.tstyle || {} }, t.short);
+  const thumb = h('span', { class: 'tpl-thumb', style: { background: t.thumb } });
+  const img = h('img', { src: `img/mallar/${templateSlug(t)}.webp`, alt: '', loading: 'lazy', draggable: false });
+  img.addEventListener('load', () => thumb.classList.add('has-img'));
+  img.addEventListener('error', () => { img.remove(); thumb.append(fallback); });
+  thumb.append(img);
+  return thumb;
+}
+
+export { createImage, TEMPLATES };

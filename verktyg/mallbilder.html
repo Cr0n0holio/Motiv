@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <title>Mallbilder</title>
+  <style>
+    body { font: 14px system-ui, sans-serif; background: #1d1d24; color: #eee; padding: 20px; }
+    #lista { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+    figure { margin: 0; text-align: center; font-size: 12px; }
+    figure img { display: block; max-width: 180px; max-height: 180px; margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Förhandsbilder för mallarna</h1>
+  <p id="status">Laddar fonter och renderar…</p>
+  <div id="lista"></div>
+  <script type="module" src="mallbilder.js"></script>
+</body>
+</html>

@@ -83,13 +83,18 @@ export function addText(kind = 'heading', overrides = {}) {
   return addElement(el);
 }
 
-export function addShape(kind, opts = {}) {
+/**
+ * dash: 'dashed' / 'dotted' för streckade linjer, fill: fyllning,
+ * at: mittpunkt (t.ex. vid dra och släpp). Allt blir ett enda ångringssteg.
+ */
+export function addShape(kind, { dash = null, fill = null, at = null } = {}) {
   const s = pageMin() * 0.3;
-  const el = createShape(kind, opts);
+  const el = createShape(kind, fill ? { fill } : {});
   if (kind === 'line' || kind === 'arrow') { el.w = s * 1.6; el.h = Math.max(40, s * 0.12); el.stroke.width = Math.max(4, s * 0.03); }
   else { el.w = s; el.h = kind === 'arrowShape' ? s * 0.6 : kind === 'halfCircle' ? s / 2 : kind === 'speech' ? s * 0.8 : s; }
   if (kind === 'rounded') el.radius = s * 0.15;
-  return addElement(el);
+  if (dash) el.stroke.dash = dash;
+  return addElement(el, { at });
 }
 
 export async function addAsset(dataURL) {
@@ -254,13 +259,25 @@ export function ungroupSelection() {
     const arr = state.doc.elements;
     const idx = arr.indexOf(g);
     const gcx = g.x + g.w / 2, gcy = g.y + g.h / 2;
+    const fx = g.flipX ? -1 : 1, fy = g.flipY ? -1 : 1;
     const kids = g.children.map((c) => {
       const k = deepClone(c);
-      const lc = { x: c.x + c.w / 2 - g.w / 2, y: c.y + c.h / 2 - g.h / 2 };
+      // Gruppens spegling flyttar barnets mittpunkt …
+      const lc = { x: (c.x + c.w / 2 - g.w / 2) * fx, y: (c.y + c.h / 2 - g.h / 2) * fy };
       const p = rotatePt(lc.x, lc.y, g.rotation || 0);
       k.x = gcx + p.x - k.w / 2;
       k.y = gcy + p.y - k.h / 2;
-      k.rotation = ((k.rotation || 0) + (g.rotation || 0)) % 360;
+      // … och spegling × rotation θ = rotation (±θ) × spegling, så barnets
+      // rotation byter tecken om exakt en axel är speglad.
+      let rot = (g.rotation || 0) + (k.rotation || 0) * fx * fy;
+      if (k.type === 'text') {
+        // Text kan inte speglas; dubbel spegling motsvarar dock en halv varv
+        if (fx < 0 && fy < 0) rot += 180;
+      } else {
+        k.flipX = !!k.flipX !== (fx < 0);
+        k.flipY = !!k.flipY !== (fy < 0);
+      }
+      k.rotation = ((rot % 360) + 540) % 360 - 180;
       k.opacity = (k.opacity ?? 1) * (g.opacity ?? 1);
       newIds.push(k.id);
       return k;
@@ -346,12 +363,12 @@ export function resizeDocument(w, h, dpi, scaleContent) {
   commit();
 }
 
-export function relayoutAllText() {
+export function relayoutAllText(elements = state.doc.elements) {
   const walk = (list) => list.forEach((e) => {
     if (e.type === 'text') { layoutText(e); syncTextBox(e, isCurvedText(e) ? 'center' : 'top'); }
     if (e.type === 'group') walk(e.children);
   });
-  walk(state.doc.elements);
+  walk(elements);
 }
 const isCurvedText = (e) => e.curve && e.curve.mode !== 'none';
 

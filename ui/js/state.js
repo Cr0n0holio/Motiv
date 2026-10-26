@@ -188,7 +188,14 @@ function restore(s) {
   emit('history');
 }
 
-export function undo() { if (!undoStack.length) return; redoStack.push(lastSnap); restore(undoStack.pop()); }
+export function undo() {
+  // Ändringar som väntar på att registreras (reglage, piltangenter) blir först
+  // ett eget steg, så att Ctrl+Z ångrar just dem och inte steget före.
+  commit();
+  if (!undoStack.length) return;
+  redoStack.push(lastSnap);
+  restore(undoStack.pop());
+}
 export function redo() { if (!redoStack.length) return; undoStack.push(lastSnap); restore(redoStack.pop()); }
 export const canUndo = () => undoStack.length > 0;
 export const canRedo = () => redoStack.length > 0;

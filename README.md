@@ -129,3 +129,16 @@ python -m http.server 8000
 
 Öppna http://localhost:8000. PDF, bakgrundsborttagning och systemfonter
 kräver skrivbordsappen, men allt annat fungerar.
+
+### Förhandsbilder för mallarna
+
+Mallpanelen visar färdigrenderade bilder från `ui/img/mallar/`. När en mall
+ändras eller läggs till tas bilderna fram igen med:
+
+```
+python verktyg/mallbilder.py
+```
+
+Öppna sedan http://localhost:8010/verktyg/mallbilder.html – alla mallar
+renderas med appens egen kod och sparas automatiskt. En mall utan bild visas
+med en enkel färgruta.

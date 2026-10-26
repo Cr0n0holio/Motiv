@@ -195,6 +195,23 @@ export function textPlatePad(el) {
   return { px: p, py: p * 0.6, r: (el.background?.radius ?? 0.2) * el.fontSize };
 }
 
+/**
+ * Textplattans ruta i lokala koordinater. Den följer den bredaste raden i
+ * stället för hela textrutan, så att en kort text i en bred ruta får en
+ * platta som en etikett och inte som en list.
+ */
+export function textPlateRect(el, L = layoutText(el)) {
+  const { px, py, r } = textPlatePad(el);
+  let x0 = 0, x1 = L.w;
+  const used = L.curved ? [] : L.lines.filter((ln) => ln.text);
+  if (used.length) {
+    x0 = Math.min(...used.map((ln) => ln.x));
+    x1 = Math.max(...used.map((ln) => ln.x + ln.width));
+  }
+  const h = L.h + py * 2;
+  return { x: x0 - px, y: -py, w: x1 - x0 + px * 2, h, r: Math.min(r, h / 2) };
+}
+
 /** Ritar ett textelement i lokala koordinater (0,0 = övre vänstra hörnet). */
 export function drawText(ctx, el, scale) {
   const L = layoutText(el);
@@ -204,11 +221,11 @@ export function drawText(ctx, el, scale) {
   if (supportsLetterSpacing) ctx.letterSpacing = L.curved ? '0px' : `${L.lsPx}px`;
 
   if (el.background?.enabled) {
-    const { px, py, r } = textPlatePad(el);
+    const p = textPlateRect(el, L);
     ctx.save();
     ctx.fillStyle = el.background.color;
     ctx.beginPath();
-    ctx.roundRect(-px, -py, L.w + px * 2, L.h + py * 2, Math.min(r, (L.h + py * 2) / 2));
+    ctx.roundRect(p.x, p.y, p.w, p.h, p.r);
     ctx.fill();
     ctx.restore();
   }
