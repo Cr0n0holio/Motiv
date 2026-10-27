@@ -93,5 +93,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           name: Motiv ${{ github.ref_name }}
-          files: paket/*
+          # Paketen ligger i undermappar (msi/, nsis/, deb/, appimage/)
+          files: paket/**/*
+          fail_on_unmatched_files: true
           generate_release_notes: true
