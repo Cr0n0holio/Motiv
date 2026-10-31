@@ -7,6 +7,7 @@ import { shapeD, isOpenShape, arrowHeadsD, lineD, maskD } from './shapes.js';
 import { getProcessed, ensureAllImages } from './images.js';
 import { bgImageProps } from './render.js';
 import { fontFaceCss } from './fonts.js';
+import { qrLayout } from './qr.js';
 
 const R = (n) => round(n, 3);
 
@@ -153,6 +154,14 @@ function elementSVG(el, X) {
   if (el.type === 'text') content = textSVG(el, X);
   else if (el.type === 'shape') content = shapeSVG(el, X);
   else if (el.type === 'image') content = imageSVG(el, X);
+  else if (el.type === 'icon') {
+    const s = Math.min(el.w, el.h) / 24;
+    content = `<g transform="translate(${R((el.w - 24 * s) / 2)} ${R((el.h - 24 * s) / 2)}) scale(${R(s)})" fill="none" ${svgColorAttrs(el.color, 'stroke')} stroke-width="${R(el.strokeWidth ?? 2)}" stroke-linecap="round" stroke-linejoin="round">${el.paths.map((d) => `<path d="${d}"/>`).join('')}</g>`;
+  } else if (el.type === 'qr') {
+    const L = qrLayout(el);
+    content = (el.background?.enabled ? `<rect width="${R(el.w)}" height="${R(el.h)}" ${svgColorAttrs(el.background.color)}/>` : '')
+      + (L ? `<path transform="translate(${R(L.ox)} ${R(L.oy)}) scale(${R(L.s)})" d="${L.q.d}" ${svgColorAttrs(el.color)}/>` : '');
+  }
   else if (el.type === 'group') content = el.children.map((c) => elementSVG(c, X)).join('');
   return `<g transform="${t}"${op}${blend}>${content}</g>`;
 }

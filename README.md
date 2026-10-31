@@ -49,9 +49,14 @@ Skriptet installerar systempaket, Rust och Tauri CLI vid behov och lägger
 - **Ta bort bakgrund med AI**, lokalt på datorn (U²-Net/IS-Net i Rust via
   tract). Modellen laddas ned första gången (5–170 MB beroende på kvalitet).
 - Använd en bild som sidbakgrund
+- **Fotoramar och bildrutnät**: ramar i olika former, polaroid och färdiga
+  rutnät – släpp en bild på ramen så fyller och beskär den sig själv
 
 **Design**
 - 16 former, linjer och pilar, gradienter, kantlinjer (heldragen, streckad, prickad)
+- **Ikoner**: drygt 170 sökbara ikoner (svenska och engelska sökord) från
+  [Lucide](https://lucide.dev), i valfri färg och linjetjocklek
+- **QR-koder** för länkar och text (även å, ä, ö), som vektor i alla exportformat
 - Lager: dra för att ändra ordning, dölj, lås, byt namn
 - Opacitet och 16 blandningslägen
 - **Färgpalett** för designen: spara färger, hämta dem från designen, och byt en
@@ -157,10 +162,41 @@ något behöver laddas ned. Testerna går också att se i webbläsaren: starta
 
 ### GitHub
 
-`.github/workflows/bygg.yml` kör testerna och bygger Windows- och Linux-paketen
-vid varje push. Paketen finns under *Artifacts* i körningen. Pushas en
-versionstagg (t.ex. `git tag v0.3.0 && git push --tags`) skapas en release med
-installationsfilerna.
+`.github/workflows/bygg.yml` kör testerna vid varje push. Windows- och
+Linux-paketen byggs bara när en versionstagg pushas (t.ex.
+`git tag v0.4.0 && git push --tags`) eller när arbetsflödet startas för hand
+under *Actions*. En versionstagg skapar en release med installationsfilerna och
+`latest.json`.
+
+### Automatiska uppdateringar
+
+Skrivbordsappen letar efter nya versioner i den senaste releasen (`latest.json`)
+strax efter start och via **Arkiv → Sök efter uppdateringar**. Uppdateringarna
+är signerade; appen installerar bara filer som är signerade med projektets
+nyckel.
+
+- Nyckeln ligger i `%USERPROFILE%\.tauri\motiv-uppdatering.key` och får aldrig
+  checkas in. **Gör en säkerhetskopia** – utan den kan redan installerade appar
+  inte uppdateras.
+- På GitHub ligger samma nyckel i hemligheten `TAURI_SIGNING_PRIVATE_KEY`
+  (Settings → Secrets and variables → Actions). Byggen utan den misslyckas.
+- Den publika nyckeln finns i `tauri.conf.json` (`plugins.updater.pubkey`).
+- Repot måste vara publikt för att appen ska nå releaserna.
+- Lokala byggen (`start.bat`, `bygg-installerare.bat`) signeras inte och
+  behöver ingen nyckel.
+
+### Ikoner
+
+`ui/js/icondata.js` skapas av `verktyg/ikoner.mjs` ur Lucide. Ändra listan i
+skriptet och kör:
+
+```
+npm install --no-save lucide@0.460.0
+node verktyg/ikoner.mjs
+```
+
+QR-koderna görs med [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator)
+(MIT), som ligger i `ui/js/vendor/`.
 
 ### Förhandsbilder för mallarna
 

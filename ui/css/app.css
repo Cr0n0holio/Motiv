@@ -392,3 +392,14 @@ input[type="number"]::-webkit-inner-spin-button { opacity: .4; }
 .size-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; margin: 8px 0 4px; }
 .size-checks .check { gap: 6px; }
 .size-checks .check .muted { margin-left: auto; }
+
+/* ---------- Ikoner och QR ---------- */
+.icon-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-top: 8px; max-height: 340px; overflow-y: auto; }
+.icon-item { aspect-ratio: 1; padding: 7px; }
+.icon-item svg { width: 100%; height: 100%; }
+.text-input { width: 100%; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; color: var(--text); outline: none; }
+.text-input:focus { border-color: var(--accent); }
+.qr-add { display: flex; gap: 6px; }
+.qr-input { width: 100%; resize: vertical; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; color: var(--text); outline: none; font: inherit; }
+.qr-input:focus { border-color: var(--accent); }
+.error-text { color: #fb7185 !important; }

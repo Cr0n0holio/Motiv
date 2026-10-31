@@ -1,15 +1,16 @@
 // Vänster sidopanel: format & mallar, text, element, bilder, bakgrund, lager.
-import { state, on, emit, commit, select, createText, createShape, newDoc, loadDoc, elementLabel, markDirty, allElements } from './state.js';
+import { state, on, emit, commit, select, single, createText, createShape, newDoc, loadDoc, elementLabel, markDirty, allElements } from './state.js';
 import { addPage, backgroundToAllPages, pageCount, currentPage } from './pages.js';
 import { h, round, deepClone, debounce } from './util.js';
 import { icon } from './controls.js';
 import * as A from './actions.js';
-import { shapeD } from './shapes.js';
+import { shapeD, maskD } from './shapes.js';
 import { paintCss, GRADIENT_PRESETS } from './paint.js';
 import { drawText, layoutText, syncTextBox } from './text.js';
 import { ensureFamily, ensureDocFonts } from './fonts.js';
 import { renderElementThumb } from './render.js';
 import { shrinkEnabled, setShrinkEnabled } from './images.js';
+import { ICON_LIST } from './icondata.js';
 import { pickImages } from './bridge.js';
 import { toast, modal } from './dialogs.js';
 import { openColorPicker } from './colorpicker.js';
@@ -271,8 +272,36 @@ builders.elements = () => {
     b.addEventListener('dragstart', (e) => e.dataTransfer.setData('application/x-motiv-shape', k));
     return b;
   };
+  // Ramar: streckad kontur i ramens form; rutnät: rutorna med mellanrum
+  const frameIcon = (k) => {
+    const sq = ['ellipse', 'heart', 'star', 'hexagon', 'diamond', 'blob'].includes(k);
+    const w = sq ? 32 : k === 'arch' ? 28 : 36, hh = sq ? 32 : k === 'arch' ? 36 : 27;
+    return `<svg viewBox="0 0 48 48"><path d="${maskD(k === 'none' ? 'rounded' : k, w, hh, k === 'rounded' ? 6 : 0)}" transform="translate(${(48 - w) / 2} ${(48 - hh) / 2})" fill="currentColor" fill-opacity=".14" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3"/></svg>`;
+  };
+  const gridIcon = (layout) => `<svg viewBox="0 0 48 48">${A.gridCells(layout).map(([x, y, w, hh]) => `<rect x="${7 + x * 34 + 1}" y="${7 + y * 34 + 1}" width="${w * 34 - 2}" height="${hh * 34 - 2}" rx="2" fill="currentColor" fill-opacity=".14" stroke="currentColor" stroke-width="1.6"/>`).join('')}</svg>`;
+  const polaroidIcon = '<svg viewBox="0 0 48 48"><rect x="10" y="6" width="28" height="36" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="13" y="9" width="22" height="22" fill="currentColor" fill-opacity=".14" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 2"/></svg>';
+  const tile = (title, svg, add) => h('button', { class: 'shape-item', title, html: svg, onclick: add });
+  const FRAME_SHAPES = [['rounded', 'Rundad ram'], ['none', 'Fyrkantig ram'], ['ellipse', 'Cirkel'], ['arch', 'Valv'], ['heart', 'Hjärta'], ['star', 'Stjärna'], ['blob', 'Blobb'], ['hexagon', 'Hexagon']];
+  const GRID_NAMES = { 'två-bredvid': 'Två bredvid varandra', 'två-över': 'Två över varandra', 'tre-kolumner': 'Tre kolumner', 'fyra': 'Fyra rutor', 'en-stor-två-små': 'En stor och två små' };
+
   panel.append(
     head('Element', 'Klicka för att lägga till, eller dra ut på sidan.'),
+    h('div', { class: 'lp-section' }, h('h4', null, 'Fotoramar'),
+      h('p', { class: 'muted small' }, 'Släpp en bild på ramen så fyller den ramen.'),
+      h('div', { class: 'shape-grid' },
+        FRAME_SHAPES.map(([k, name]) => tile(name, frameIcon(k), () => A.addFrame(k))),
+        tile('Polaroid', polaroidIcon, () => A.addPolaroid()))),
+    h('div', { class: 'lp-section' }, h('h4', null, 'Bildrutnät'), h('div', { class: 'shape-grid' },
+      A.GRID_LAYOUTS.map((k) => tile(GRID_NAMES[k] || k, gridIcon(k), () => A.addGrid(k))))),
+    iconSection(),
+    h('div', { class: 'lp-section' }, h('h4', null, 'QR-kod'),
+      (() => {
+        const inp = h('input', { class: 'text-input', placeholder: 'https://exempel.se', spellcheck: false });
+        const add = () => { A.addQR(inp.value.trim() || 'https://exempel.se'); inp.value = ''; };
+        inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') add(); });
+        return h('div', { class: 'qr-add' }, inp, h('button', { class: 'btn primary', onclick: add }, 'Lägg till'));
+      })(),
+      h('p', { class: 'muted small' }, 'En länk till t.ex. en hemsida, ett formulär eller Swish-info. Koden är vektor och skarp i alla storlekar.')),
     h('div', { class: 'lp-section' }, h('h4', null, 'Former'), h('div', { class: 'shape-grid' }, SHAPE_LIST.map((k) => item(k, () => A.addShape(k))))),
     h('div', { class: 'lp-section' }, h('h4', null, 'Linjer & pilar'), h('div', { class: 'shape-grid' },
       item('line', () => A.addShape('line')),
@@ -285,6 +314,27 @@ builders.elements = () => {
     })))),
   );
 };
+
+// Ikoner: sökbara på svenska och engelska; visar ett urval tills man söker
+function iconSection() {
+  const grid = h('div', { class: 'icon-grid' });
+  const search = h('input', { class: 'text-input', placeholder: `Sök bland ${ICON_LIST.length} ikoner…`, spellcheck: false });
+  const tileFor = (def) => {
+    const b = h('button', { class: 'shape-item icon-item', title: def.label, html: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${def.d.map((d) => `<path d="${d}"/>`).join('')}</svg>`, onclick: () => A.addIcon(def) });
+    return b;
+  };
+  const fill = () => {
+    const q = search.value.trim().toLowerCase();
+    const hits = q ? ICON_LIST.filter((d) => `${d.label} ${d.kw} ${d.id}`.toLowerCase().includes(q)) : ICON_LIST.slice(0, 40);
+    grid.replaceChildren(...hits.map(tileFor));
+    if (!hits.length) grid.append(h('p', { class: 'muted small' }, 'Inga ikoner hittades.'));
+  };
+  search.addEventListener('input', fill);
+  search.addEventListener('keydown', (e) => e.stopPropagation());
+  fill();
+  return h('div', { class: 'lp-section' }, h('h4', null, 'Ikoner'), search, grid,
+    h('p', { class: 'muted small' }, 'Ikoner från Lucide (fri licens).'));
+}
 
 // ---------------- Bilder ----------------
 function imageAssets() {
@@ -310,8 +360,10 @@ builders.uploads = () => {
     const im = h('img', { src: url, draggable: true, loading: 'lazy' });
     im.addEventListener('dragstart', (e) => e.dataTransfer.setData('application/x-motiv-asset', id));
     grid.append(h('button', {
-      class: 'asset', title: 'Klicka för att lägga till', onclick: async () => {
-        await A.addImageFromDataURL(url);
+      class: 'asset', title: 'Klicka för att lägga till – eller fylla den markerade ramen', onclick: async () => {
+        const sel = single();
+        if (sel?.type === 'image' && sel.frame) await A.fillFrame(sel, url);
+        else await A.addImageFromDataURL(url);
       },
     }, im));
   }

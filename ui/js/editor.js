@@ -270,7 +270,7 @@ function handlesFor(f) {
   if (!el) return ['nw', 'ne', 'se', 'sw'];
   if (el.locked) return [];
   if (el.type === 'text') return isCurved(el) ? ['nw', 'ne', 'se', 'sw'] : ['nw', 'ne', 'se', 'sw', 'e', 'w'];
-  if (el.type === 'group') return ['nw', 'ne', 'se', 'sw'];
+  if (el.type === 'group' || el.type === 'icon' || el.type === 'qr') return ['nw', 'ne', 'se', 'sw'];
   if (el.type === 'shape' && (el.kind === 'line' || el.kind === 'arrow')) return ['e', 'w'];
   return all;
 }
@@ -686,7 +686,7 @@ function doResize(e, d) {
 
   const el0 = drag.start.length === 1 ? drag.start[0].el : null;
   const corner = dx && dy;
-  const keepAspect = corner && (!el0 || el0.type === 'text' || el0.type === 'group' || el0.type === 'image' ? !e.shiftKey : e.shiftKey);
+  const keepAspect = corner && (!el0 || ['text', 'group', 'image', 'icon', 'qr'].includes(el0.type) ? !e.shiftKey : e.shiftKey);
   if (keepAspect || !el0) {
     const s = Math.max(nw / f.w, nh / f.h);
     nw = f.w * s; nh = f.h * s;
@@ -723,7 +723,7 @@ function doResize(e, d) {
     } else if (el0.type === 'image' && !corner) {
       resizeImageCrop(cur, el0, nw, nh, center, dx, dy);
     } else {
-      if (el0.type === 'image' || el0.type === 'shape') {
+      if (el0.type === 'image' || el0.type === 'shape' || el0.type === 'icon' || el0.type === 'qr') {
         cur.w = nw; cur.h = nh;
       }
       cur.x = center.x - cur.w / 2; cur.y = center.y - cur.h / 2;
@@ -796,6 +796,7 @@ function onDblClick(e) {
   const hit = hitTest(d.x, d.y);
   if (!hit || hit.locked) return;
   if (hit.type === 'text') { select([hit.id]); startTextEdit(hit, true); }
+  else if (hit.type === 'image' && !hit.assetId) { select([hit.id]); emit('frame:choose', hit); }
   else if (hit.type === 'image') { select([hit.id]); startCrop(hit); }
   else if (hit.type === 'group') enterGroupAt(hit, s);
 }
@@ -1042,6 +1043,30 @@ function hideContextMenu() { ctxMenuHide(); }
 
 export function getCanvas() { return canvas; }
 export function viewCenterDoc() { return screenToPage(viewW() / 2, viewH() / 2); }
+/**
+ * Ramen (bildelement med frame: true) under en punkt i sidans koordinater,
+ * även inuti grupper som bildrutnät. Används när man släpper en bild.
+ */
+export function frameAt(px, py) {
+  const walk = (list, m) => {
+    for (let i = list.length - 1; i >= 0; i--) {
+      const el = list[i];
+      if (!el.visible) continue;
+      const q = m.inverse().transformPoint(new DOMPoint(px, py));
+      if (el.type === 'group') {
+        const gm = m.translate(el.x + el.w / 2, el.y + el.h / 2).rotate(el.rotation || 0).scale(el.flipX ? -1 : 1, el.flipY ? -1 : 1).translate(-el.w / 2, -el.h / 2);
+        const f = walk(el.children, gm);
+        if (f) return f;
+      } else if (el.type === 'image' && el.frame) {
+        const l = toLocal(el, q.x, q.y);
+        if (l.x >= 0 && l.y >= 0 && l.x <= el.w && l.y <= el.h) return el;
+      }
+    }
+    return null;
+  };
+  return walk(pageView(state.doc, state.doc.pageIndex).elements, new DOMMatrix());
+}
+
 /** Sidkoordinater för en punkt på skärmen (t.ex. där något släpps). */
 export function screenToDocFromClient(cx, cy) {
   const r = canvas.getBoundingClientRect();

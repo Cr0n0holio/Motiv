@@ -180,6 +180,20 @@ export function createImage(assetId, w, h, opts = {}) {
   return el;
 }
 
+/** Ikon ur ikonbiblioteket: linjer i ett 24×24-rutnät som skalas med elementet. */
+export function createIcon(def, opts = {}) {
+  const el = base('icon', { name: def.label, iconId: def.id, paths: [...def.d], color: '#1d1d24', strokeWidth: 2, w: 200, h: 200 });
+  Object.assign(el, deepClone(opts));
+  return el;
+}
+
+/** QR-kod. level: felkorrigering L/M/Q/H; margin: tom kant i antal rutor. */
+export function createQR(text, opts = {}) {
+  const el = base('qr', { name: 'QR-kod', text, color: '#111111', background: { enabled: true, color: '#ffffff' }, level: 'M', margin: 2, w: 400, h: 400 });
+  Object.assign(el, deepClone(opts));
+  return el;
+}
+
 export function createGroup(children) {
   const el = base('group', { name: 'Grupp', children });
   return el;

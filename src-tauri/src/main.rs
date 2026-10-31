@@ -13,6 +13,8 @@ mod util;
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             util::migrate_legacy_data(app.handle());
             Ok(())

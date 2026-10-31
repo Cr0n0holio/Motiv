@@ -26,6 +26,9 @@ tract-onnx = "0.21"
 svg2pdf = "0.13"
 # Sätter ihop flera SVG-sidor till en PDF (samma version som svg2pdf använder)
 pdf-writer = "0.12"
+# Automatiska uppdateringar från GitHub-releaserna (och omstart efteråt)
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 [features]
 # custom-protocol bäddar in ui/-mappen i exe-filen så att `cargo run` fungerar direkt.

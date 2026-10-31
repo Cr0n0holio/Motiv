@@ -1,11 +1,11 @@
 // Åtgärder som används av menyer, paneler, kortkommandon och canvas.
 import {
-  state, emit, commit, select, selected, getById, createText, createShape, createImage, createGroup, reId, allElements, groupChain, rebaseHistory,
+  state, emit, commit, select, selected, getById, createText, createShape, createImage, createGroup, createIcon, createQR, reId, allElements, groupChain, rebaseHistory,
 } from './state.js';
 import { uid, rotatePt, deepClone, loadImage, clamp, parseColor, toHex } from './util.js';
 import { syncTextBox, layoutText } from './text.js';
 import { ensureTextFont } from './fonts.js';
-import { shrinkImage, shrinkEnabled } from './images.js';
+import { shrinkImage, shrinkEnabled, coverCrop } from './images.js';
 
 // ---------- Geometri ----------
 export function corners(el) {
@@ -164,7 +164,7 @@ export function copySelection() {
   if (!els.length) return false;
   const assets = {};
   const walk = (list) => list.forEach((e) => {
-    if (e.type === 'image') { assets[e.assetId] = state.doc.assets[e.assetId]; if (e.maskAssetId) assets[e.maskAssetId] = state.doc.assets[e.maskAssetId]; }
+    if (e.type === 'image' && e.assetId) { assets[e.assetId] = state.doc.assets[e.assetId]; if (e.maskAssetId) assets[e.maskAssetId] = state.doc.assets[e.maskAssetId]; }
     if (e.type === 'group') walk(e.children);
   });
   walk(els);
@@ -341,7 +341,7 @@ let nudgeT;
 function nudgeCommit() { clearTimeout(nudgeT); nudgeT = setTimeout(commit, 350); }
 
 export function setImageAsBackground(el) {
-  if (!el || el.type !== 'image') return;
+  if (!el || el.type !== 'image' || !el.assetId) return;
   state.doc.background.image = { assetId: el.assetId, maskAssetId: el.maskAssetId, filters: deepClone(el.filters), opacity: 1 };
   state.doc.elements = state.doc.elements.filter((e) => e.id !== el.id);
   select([]);
@@ -471,6 +471,7 @@ function eachColor(el, fn, onlyEnabled = false) {
     else p.stops?.forEach((s) => fn(s, 'color'));
   };
   paint(el.fill);
+  if (typeof el.color === 'string') fn(el, 'color'); // ikoner och QR-koder
   for (const k of ['stroke', 'shadow', 'glow', 'border', 'background']) if (el[k]?.color && (!onlyEnabled || el[k].enabled)) fn(el[k], 'color');
   if (el.type === 'group') el.children.forEach((c) => eachColor(c, fn, onlyEnabled));
 }
@@ -529,4 +530,84 @@ export function paletteFromDesign() {
   emit('palette');
   commit();
   return top.length;
+}
+
+// ---------- Fotoramar ----------
+// En ram är ett bildelement (frame: true) som kan vara tomt. En tom ram visas
+// som en platshållare; en bild som läggs i ramen fyller den och beskärs.
+
+/** Lägger en bild i en ram (eller byter bild i en vanlig bild), fyllande. */
+export async function fillFrame(el, dataURL) {
+  if (!el || el.type !== 'image') return;
+  if (!Object.values(state.doc.assets).includes(dataURL)) dataURL = await prepareUpload(dataURL);
+  const img = await loadImage(dataURL);
+  el.assetId = await addAsset(dataURL);
+  el.maskAssetId = null;
+  el.crop = coverCrop(img.naturalWidth, img.naturalHeight, el.w, el.h);
+  emit('assets');
+  emit('doc');
+  commit();
+}
+
+/** Tar bort bilden ur en ram så att den blir tom igen. */
+export function emptyFrame(el) {
+  if (!el?.frame) return;
+  el.assetId = null;
+  el.maskAssetId = null;
+  el.crop = { x: 0, y: 0, w: 1, h: 1 };
+  emit('doc');
+  commit();
+}
+
+const newFrame = (w, h, opts = {}) => createImage(null, w, h, { name: 'Ram', frame: true, ...opts });
+
+/** Ram med en form (samma former som bildmaskerna). */
+export function addFrame(shape = 'rounded') {
+  const s = pageMin() * 0.4;
+  const square = ['ellipse', 'heart', 'star', 'hexagon', 'diamond', 'blob'].includes(shape);
+  const w = s, h = square ? s : shape === 'arch' ? s * 1.3 : s * 0.75;
+  return addElement(newFrame(w, h, { maskShape: shape, radius: shape === 'rounded' ? s * 0.08 : 0 }));
+}
+
+/** Polaroid: vit kort med skugga och en kvadratisk ram, som en grupp. */
+export function addPolaroid() {
+  const s = pageMin() * 0.36, pad = s * 0.06;
+  const card = createShape('rect', { name: 'Polaroid', fill: { type: 'solid', color: '#ffffff' }, stroke: { enabled: false, color: '#000000', width: 0, dash: 'solid' }, shadow: { enabled: true, color: '#00000040', blur: s * 0.05, x: 0, y: s * 0.02 } });
+  Object.assign(card, { x: 0, y: 0, w: s + pad * 2, h: s + pad * 5 });
+  const frame = Object.assign(newFrame(s, s), { x: pad, y: pad });
+  const g = createGroup([card, frame]);
+  Object.assign(g, { name: 'Polaroid', w: card.w, h: card.h });
+  return addElement(g);
+}
+
+// Rutnät som andelar av en kvadrat: [x, y, b, h]
+const GRIDS = {
+  'två-bredvid': [[0, 0, 0.5, 1], [0.5, 0, 0.5, 1]],
+  'två-över': [[0, 0, 1, 0.5], [0, 0.5, 1, 0.5]],
+  'tre-kolumner': [[0, 0, 1 / 3, 1], [1 / 3, 0, 1 / 3, 1], [2 / 3, 0, 1 / 3, 1]],
+  'fyra': [[0, 0, 0.5, 0.5], [0.5, 0, 0.5, 0.5], [0, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]],
+  'en-stor-två-små': [[0, 0, 0.62, 1], [0.62, 0, 0.38, 0.5], [0.62, 0.5, 0.38, 0.5]],
+};
+export const GRID_LAYOUTS = Object.keys(GRIDS);
+export const gridCells = (layout) => GRIDS[layout];
+
+/** Bildrutnät: en grupp med ramar och jämna mellanrum. */
+export function addGrid(layout = 'fyra') {
+  const S = pageMin() * 0.7, gap = S * 0.015;
+  const frames = GRIDS[layout].map(([x, y, w, h]) => Object.assign(newFrame(w * S - gap, h * S - gap, { maskShape: 'rounded', radius: S * 0.012 }), { x: x * S + gap / 2, y: y * S + gap / 2 }));
+  const g = createGroup(frames);
+  Object.assign(g, { name: 'Bildrutnät', w: S, h: S });
+  return addElement(g);
+}
+
+// ---------- Ikoner och QR-koder ----------
+
+export function addIcon(def, { at = null } = {}) {
+  const s = pageMin() * 0.18;
+  return addElement(createIcon(def, { w: s, h: s }), { at });
+}
+
+export function addQR(text, { at = null } = {}) {
+  const s = pageMin() * 0.3;
+  return addElement(createQR(text, { w: s, h: s }), { at });
 }

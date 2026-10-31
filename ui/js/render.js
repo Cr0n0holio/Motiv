@@ -5,6 +5,7 @@ import { canvasPaint, paintIsVisible } from './paint.js';
 import { drawText } from './text.js';
 import { shapeD, isOpenShape, arrowHeadsD, lineD, maskD } from './shapes.js';
 import { getProcessed, targetSize, sourceSize, coverCrop } from './images.js';
+import { qrLayout } from './qr.js';
 
 export const BLEND_MODES = [
   ['normal', 'Normal'], ['multiply', 'Multiplicera'], ['screen', 'Raster'], ['overlay', 'Täcka över'],
@@ -68,7 +69,53 @@ function drawShape(ctx, el, scale) {
   }
 }
 
+/** Ikon: linjerna skalas lika i båda riktningar och centreras i rutan. */
+function drawIcon(ctx, el) {
+  const s = Math.min(el.w, el.h) / 24;
+  ctx.translate((el.w - 24 * s) / 2, (el.h - 24 * s) / 2);
+  ctx.scale(s, s);
+  ctx.strokeStyle = el.color;
+  ctx.lineWidth = el.strokeWidth ?? 2;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const d of el.paths) ctx.stroke(new Path2D(d));
+}
+
+function drawQR(ctx, el) {
+  if (el.background?.enabled) { ctx.fillStyle = el.background.color; ctx.fillRect(0, 0, el.w, el.h); }
+  const L = qrLayout(el);
+  if (!L) return;
+  ctx.translate(L.ox, L.oy);
+  ctx.scale(L.s, L.s);
+  ctx.fillStyle = el.color;
+  ctx.fill(new Path2D(L.q.d));
+}
+
+/** Tom ram: ljusgrå yta i ramens form med en liten bildsymbol. */
+function drawFramePlaceholder(ctx, el) {
+  const path = new Path2D(el.maskShape && el.maskShape !== 'none' ? maskD(el.maskShape, el.w, el.h, el.radius) : `M0,0H${el.w}V${el.h}H0Z`);
+  ctx.save();
+  ctx.fillStyle = '#dfe1ea';
+  ctx.fill(path);
+  ctx.clip(path);
+  const s = Math.min(el.w, el.h) * 0.26;
+  ctx.translate(el.w / 2 - s / 2, el.h / 2 - s / 2);
+  ctx.scale(s / 24, s / 24);
+  ctx.strokeStyle = '#9da1b4';
+  ctx.lineWidth = 1.6;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.stroke(new Path2D('M3 5h18v14H3z M3 16l5-5 4 4 3-3 6 6'));
+  ctx.beginPath(); ctx.arc(15.5, 9, 1.6, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+
 function drawImageEl(ctx, el, scale, opts) {
+  if (!el.assetId) {
+    // Platshållaren syns i editorn och i miniatyrer, men aldrig i en export
+    if (!opts.exact || opts.placeholders) drawFramePlaceholder(ctx, el);
+    return;
+  }
   const { tw, th } = opts.exact ? { tw: el.w * scale, th: el.h * scale } : targetSize(el, scale);
   const c = getProcessed(el, tw, th);
   if (!c) {
@@ -109,6 +156,8 @@ export function drawElement(ctx, el, scale, opts = {}) {
     case 'text': drawText(ctx, el, scale); break;
     case 'shape': drawShape(ctx, el, scale); break;
     case 'image': drawImageEl(ctx, el, scale, opts); break;
+    case 'icon': drawIcon(ctx, el); break;
+    case 'qr': drawQR(ctx, el); break;
     case 'group':
       for (const ch of el.children) drawElement(ctx, ch, scale, { ...opts, skipId: null });
       break;

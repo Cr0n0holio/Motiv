@@ -1,6 +1,6 @@
 // Högerpanelen: egenskaper för det som är markerat.
 import { state, on, emit, commit, selected, single, markDirty, DEFAULT_FILTERS } from './state.js';
-import { h, deepClone, round } from './util.js';
+import { h, deepClone, round, parseColor } from './util.js';
 import { Binder, numField, slider, select, toggleBtn, segmented, colorBtn, effectSection, section, row, icon } from './controls.js';
 import { syncTextBox, isCurved, cssFamily } from './text.js';
 import { openFontPicker } from './fontpicker.js';
@@ -12,6 +12,7 @@ import { FILTER_PRESETS, getProcessed, ensureImage } from './images.js';
 import { MASK_SHAPES, maskD, isOpenShape } from './shapes.js';
 import { openBgRemoval, restoreBackground } from './bgremoval.js';
 import { pickImages } from './bridge.js';
+import { QR_LEVELS, qrPath } from './qr.js';
 import { openColorPicker } from './colorpicker.js';
 import { toast } from './dialogs.js';
 import { addPage, duplicatePage, deletePage, backgroundToAllPages, pageCount, currentPage } from './pages.js';
@@ -68,6 +69,8 @@ export function rebuild() {
       el.type === 'image' ? imagePanel(el) : null,
       el.type === 'shape' ? shapePanel(el) : null,
       el.type === 'group' ? groupPanel(el) : null,
+      el.type === 'icon' ? iconPanel() : null,
+      el.type === 'qr' ? qrPanel(el) : null,
       arrangePanel(el),
     );
   }
@@ -75,7 +78,7 @@ export function rebuild() {
   B.refresh();
 }
 
-const TYPE_LABEL = { text: 'Text', image: 'Bild', shape: 'Form', group: 'Grupp' };
+const TYPE_LABEL = { text: 'Text', image: 'Bild', shape: 'Form', group: 'Grupp', icon: 'Ikon', qr: 'QR-kod' };
 function header(el) {
   return h('div', { class: 'panel-head' },
     h('div', { class: 'ph-title' }, h('span', { class: 'ph-type' }, TYPE_LABEL[el.type]), h('span', { class: 'ph-name' }, el.type === 'text' ? '' : el.name)),
@@ -129,6 +132,54 @@ function pagePanel() {
       ),
     ),
   );
+}
+
+// ---------------- Ikon ----------------
+function iconPanel() {
+  const setI = (fn, f) => apply(fn, f, { layout: false });
+  return section('Ikon',
+    row(colorBtn(B, { label: 'Färg', get: () => first()?.color, set: (v, f) => setI((e) => { e.color = v; }, f) })),
+    slider(B, { label: 'Linjetjocklek', min: 0.5, max: 4, step: 0.25, decimals: 2, get: () => first()?.strokeWidth ?? 2, set: (v, f) => setI((e) => { e.strokeWidth = v; }, f) }),
+  );
+}
+
+// ---------------- QR-kod ----------------
+function qrPanel(el) {
+  const setQ = (fn, f) => apply(fn, f, { layout: false });
+  const input = h('textarea', { class: 'qr-input', rows: 3, spellcheck: false, placeholder: 'https://exempel.se' });
+  const status = h('p', { class: 'muted small' });
+  const check = () => {
+    const t = first()?.text || '';
+    const q = qrPath(t, first()?.level);
+    status.textContent = !t ? 'Skriv en länk eller text.' : q ? `${q.n} × ${q.n} rutor · testa gärna med mobilens kamera` : 'För mycket text för en QR-kod – korta ned den.';
+    status.classList.toggle('error-text', !!t && !q);
+  };
+  input.addEventListener('input', () => { setQ((e) => { e.text = input.value; }, false); check(); });
+  input.addEventListener('change', () => setQ((e) => { e.text = input.value; }, true));
+  input.addEventListener('keydown', (e) => e.stopPropagation());
+  B.add(() => { if (document.activeElement !== input) input.value = first()?.text || ''; check(); });
+  const level = select(B, {
+    options: QR_LEVELS.map(([k, l]) => [k, `${l} felkorrigering`]),
+    get: () => first()?.level || 'M',
+    set: (v) => setQ((e) => { e.level = v; }, true),
+  });
+  return section('QR-kod',
+    h('div', { class: 'sub-label' }, 'Länk eller text'),
+    input, status,
+    row(
+      colorBtn(B, { label: 'Färg', get: () => first()?.color, set: (v, f) => setQ((e) => { e.color = v; }, f) }),
+      colorBtn(B, { label: 'Bakgrund', allowNone: true, get: () => (first()?.background?.enabled ? first().background.color : '#00000000'), set: (v, f) => setQ((e) => { e.background = { enabled: parseColor(v).a > 0, color: v }; }, f) }),
+    ),
+    level,
+    h('p', { class: 'muted small' }, 'Högre felkorrigering gör koden tätare men läsbar även om en del täcks, t.ex. av en logga.'),
+  );
+}
+
+/** Väljer en bild från datorn och lägger den i rutan (fyllande). */
+export async function chooseImageFor(el) {
+  if (!el) return;
+  const [img] = await pickImages();
+  if (img) await A.fillFrame(el, img.dataURL);
 }
 
 // ---------------- Färgpalett ----------------
@@ -374,7 +425,7 @@ function imagePanel(el) {
     B.refresh();
   };
   B.add(() => presetGrid.querySelectorAll('.preset').forEach((b) => b.classList.toggle('active', b.dataset.id === (first()?.preset || 'none'))));
-  buildPresets();
+  if (el.assetId) buildPresets();
 
   const adj = (key, label, min, max, unit = '') => slider(B, {
     label, min, max, unit,
@@ -390,29 +441,29 @@ function imagePanel(el) {
   }));
   B.add(() => maskGrid.querySelectorAll('.mask-btn').forEach((b) => b.classList.toggle('active', b.dataset.k === (first()?.maskShape || 'none'))));
 
+  // Tom ram: välj bild, form och ram – inget att filtrera eller beskära än
+  if (!el.assetId) {
+    return h('div', null,
+      section('Ram',
+        h('button', { class: 'btn full primary', onclick: () => chooseImageFor(first()) }, icon('image'), 'Välj bild…'),
+        h('p', { class: 'muted small' }, 'Eller dra in en bild från Bilder-panelen eller Utforskaren och släpp den på ramen. Dubbelklick fungerar också.'),
+      ),
+      section('Form', maskGrid,
+        (el.maskShape === 'rounded') ? slider(B, { label: 'Hörnradie', min: 0, max: Math.round(Math.min(el.w, el.h) / 2), get: () => first()?.radius || 0, set: (v, f) => setI((e) => { e.radius = v; }, f) }) : null,
+      ),
+    );
+  }
+
   return h('div', null,
     section('Bild',
       h('div', { class: 'btn-grid two' },
         h('button', { class: 'btn', onclick: () => startCrop(first()) }, icon('crop'), 'Beskär'),
         h('button', { class: 'btn accent', onclick: () => openBgRemoval(first()) }, icon('magic'), 'Ta bort bakgrund'),
-        h('button', {
-          class: 'btn', onclick: async () => {
-            const [img] = await pickImages();
-            if (!img) return;
-            const url = await A.prepareUpload(img.dataURL);
-            const im = await loadImage(url);
-            const id = await A.addAsset(url);
-            const e = first();
-            // Behåll rutans storlek, fyll den som "cover"
-            const r = im.naturalWidth / im.naturalHeight, rr = e.w / e.h;
-            e.crop = r > rr ? { x: (1 - rr / r) / 2, y: 0, w: rr / r, h: 1 } : { x: 0, y: (1 - r / rr) / 2, w: 1, h: r / rr };
-            e.assetId = id; e.maskAssetId = null;
-            emit('assets'); emit('doc'); commit();
-          },
-        }, icon('replace'), 'Ersätt'),
+        h('button', { class: 'btn', title: 'Byt bild men behåll rutans storlek och form', onclick: () => chooseImageFor(first()) }, icon('replace'), 'Ersätt'),
         h('button', { class: 'btn', onclick: () => A.setImageAsBackground(first()) }, icon('bg'), 'Som bakgrund'),
       ),
       el.maskAssetId ? h('button', { class: 'btn full ghost', onclick: () => restoreBackground(first()) }, 'Återställ originalbakgrund') : null,
+      el.frame ? h('button', { class: 'btn full ghost', onclick: () => A.emptyFrame(first()) }, 'Töm ramen') : null,
     ),
     section('Filter', presetGrid),
     section('Justera',

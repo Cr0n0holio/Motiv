@@ -11,6 +11,7 @@ try { chosen = localStorage.getItem('motiv.bgModel'); } catch { /* ignore */ }
 
 export async function openBgRemoval(el) {
   if (!el || el.type !== 'image') return;
+  if (!el.assetId) { toast('Lägg först en bild i ramen', 'info'); return; }
   if (!isTauri) { toast('Bakgrundsborttagning kräver skrivbordsappen (Rust-delen).', 'error'); return; }
   let models;
   try { models = await invoke('bg_models'); } catch (e) { toast(String(e), 'error'); return; }

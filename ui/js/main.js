@@ -7,9 +7,9 @@ import { h, blobToDataURL, debounce } from './util.js';
 import { isTauri, invoke, saveText, openText } from './bridge.js';
 import {
   initEditor, requestRender, fitToScreen, zoomTo, zoomBy, startTextEdit, finishTextEdit, startCrop, finishCrop, isTyping,
-  setContextMenuHider, screenToDocFromClient, hitTest, getCanvas, exitGroupEditing,
+  setContextMenuHider, screenToDocFromClient, hitTest, getCanvas, exitGroupEditing, frameAt,
 } from './editor.js';
-import { initProperties } from './properties.js';
+import { initProperties, chooseImageFor } from './properties.js';
 import { initLeftPanel, openTab, uploadImages } from './leftpanel.js';
 import { initFonts, ensureDocFonts, missingFamilies } from './fonts.js';
 import { icon } from './controls.js';
@@ -20,6 +20,7 @@ import { closeColorPicker } from './colorpicker.js';
 import { closeFontPicker } from './fontpicker.js';
 import { ensureAllImages, clearImageCaches } from './images.js';
 import * as A from './actions.js';
+import { initUpdates, checkForUpdates } from './updates.js';
 
 const $ = (s) => document.querySelector(s);
 
@@ -57,6 +58,7 @@ function buildTopbar() {
     ['Ladda upp bilder…', 'Ctrl+I', uploadImages],
     ['Exportera…', 'Ctrl+E', openExportDialog],
     null,
+    ['Sök efter uppdateringar…', '', () => checkForUpdates(true), !isTauri],
     ['Om Motiv', '', about],
   ]));
   editBtn.addEventListener('click', () => showMenu(editBtn, [
@@ -443,8 +445,14 @@ function setupDrop() {
     depth = 0; overlay.classList.remove('on');
     const inStage = stage.contains(e.target) || e.target === overlay;
     const at = inStage ? screenToDocFromClient(e.clientX, e.clientY) : null;
+    // En bild som släpps på en ram fyller ramen
+    const frame = at ? frameAt(at.x, at.y) : null;
     const assetId = e.dataTransfer.getData('application/x-motiv-asset');
-    if (assetId && state.doc.assets[assetId]) { await A.addImageFromDataURL(state.doc.assets[assetId], { at }); return; }
+    if (assetId && state.doc.assets[assetId]) {
+      if (frame) await A.fillFrame(frame, state.doc.assets[assetId]);
+      else await A.addImageFromDataURL(state.doc.assets[assetId], { at });
+      return;
+    }
     const shape = e.dataTransfer.getData('application/x-motiv-shape');
     if (shape) {
       const dashed = shape === 'dashed' || shape === 'dotted';
@@ -452,13 +460,18 @@ function setupDrop() {
       return;
     }
     const files = [...e.dataTransfer.files];
+    let target = frame;
     for (const f of files) {
       if (PROJECT_EXT.test(f.name)) {
         if (await confirmDiscard()) await loadProjectText(await f.text(), f.name, null);
         return;
       }
       if (!f.type.startsWith('image/')) continue;
-      try { await A.addImageFromDataURL(await blobToDataURL(f), { at, name: f.name }); } catch (err) { toast(`${f.name}: ${err.message}`, 'error'); }
+      try {
+        // Första bilden fyller ramen man släppte på, resten läggs till som vanligt
+        if (target) { await A.fillFrame(target, await blobToDataURL(f)); target = null; }
+        else await A.addImageFromDataURL(await blobToDataURL(f), { at, name: f.name });
+      } catch (err) { toast(`${f.name}: ${err.message}`, 'error'); }
     }
   });
 }
@@ -478,6 +491,7 @@ async function boot() {
   window.addEventListener('keydown', onKey);
   document.addEventListener('paste', onPaste);
   on('toast', ({ msg, type }) => toast(msg, type));
+  on('frame:choose', (el) => chooseImageFor(el));
   on('dirty', () => autosave());
   on('doc', () => autosave());
   on('fonts', () => { A.relayoutAllText(); requestRender(); });
@@ -492,6 +506,7 @@ async function boot() {
   if (!isTauri) document.body.classList.add('browser-mode');
   await initFonts();
   offerRestore();
+  initUpdates({ save: () => saveProject(false) });
 }
 
 boot().catch((e) => { console.error(e); toast(`Fel vid start: ${e.message || e}`, 'error', { timeout: 0 }); });

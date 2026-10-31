@@ -155,7 +155,7 @@ function drawThumb(i) {
   const dpr = window.devicePixelRatio || 1;
   const cssW = parseFloat(c.style.width), cssH = parseFloat(c.style.height);
   const scale = Math.min((cssW * dpr) / d.width, (cssH * dpr) / d.height);
-  const src = renderToCanvas(pageView(d, i), scale, { background: '#ffffff' });
+  const src = renderToCanvas(pageView(d, i), scale, { background: '#ffffff', placeholders: true });
   c.width = src.width; c.height = src.height;
   c.getContext('2d').drawImage(src, 0, 0);
 }

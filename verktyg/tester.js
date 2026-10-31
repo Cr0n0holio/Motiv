@@ -12,6 +12,8 @@ import { TEMPLATES, templateSlug } from '../ui/js/leftpanel.js';
 import { gradientLine } from '../ui/js/paint.js';
 import { resizedView, renderExportCanvas } from '../ui/js/exporter.js';
 import { parseColor } from '../ui/js/util.js';
+import { ICON_LIST } from '../ui/js/icondata.js';
+import { qrPath } from '../ui/js/qr.js';
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -203,6 +205,52 @@ test('export i ett annat format: innehållet ryms och originalet ändras inte', 
   eq([r.x, r.w], [0, 1000], 'originalet ändrades:');
   const canvas = await renderExportCanvas(1, { view: v });
   eq([canvas.width, canvas.height], [1080, 1920]);
+});
+
+// ---------- Ramar, ikoner och QR-koder ----------
+test('en bild som läggs i en ram fyller den och beskärs, tomma ramar exporteras inte', async () => {
+  fresh(1000, 1000);
+  const g = A.addGrid('två-bredvid');
+  const frame = g.children[0];
+  let svg = await buildSVG(S.pageView(S.state.doc, 0), {});
+  ok(!svg.includes('<image'), 'en tom ram kom med i exporten');
+  const c = document.createElement('canvas'); c.width = 1000; c.height = 500;
+  c.getContext('2d').fillRect(0, 0, 1000, 500);
+  await A.fillFrame(frame, c.toDataURL('image/png'));
+  ok(frame.assetId, 'ramen fick ingen bild');
+  // Den synliga delen av bilden (1000×500 px) ska ha ramens proportioner
+  near((frame.crop.w * 1000) / (frame.crop.h * 500), frame.w / frame.h, 0.01, 'beskärningen följer ramens proportioner:');
+  svg = await buildSVG(S.pageView(S.state.doc, 0), {});
+  eq((svg.match(/<image /g) || []).length, 1);
+  A.emptyFrame(frame);
+  eq(frame.assetId, null);
+});
+
+test('ikoner ritas, exporteras som vektor och byter färg med paletten', async () => {
+  fresh(400, 400);
+  const def = ICON_LIST.find((d) => d.id === 'heart');
+  const ic = A.addIcon(def);
+  ic.color = '#ff0000';
+  const px = snapshotPixels();
+  let red = 0;
+  for (let i = 0; i < px.length; i += 4) if (px[i] > 200 && px[i + 1] < 80) red++;
+  ok(red > 50, 'ikonen syns inte');
+  const svg = await buildSVG(S.pageView(S.state.doc, 0), {});
+  ok(svg.includes(def.d[0]), 'ikonens linjer saknas i SVG:n');
+  eq(A.replaceColor('#ff0000', '#00ff00'), 1);
+  eq(ic.color, '#00ff00');
+  ok(ICON_LIST.length >= 150 && new Set(ICON_LIST.map((d) => d.id)).size === ICON_LIST.length, 'ikonlistan');
+});
+
+test('QR-koder har giltig storlek, sökarmönster i hörnen och klarar å, ä, ö', () => {
+  for (const text of ['https://exempel.se', 'Hej på dig, åäö!']) {
+    const q = qrPath(text, 'M');
+    ok(q && (q.n - 21) % 4 === 0, `ogiltig storlek ${q?.n}`);
+    // Sökarmönstrets yttre ram (7 rutor) börjar i övre vänstra hörnet
+    ok(q.d.startsWith('M0 0h7v1h-7z'), 'sökarmönster saknas');
+  }
+  eq(qrPath('', 'M'), null);
+  eq(qrPath('x'.repeat(5000), 'H'), null, 'för lång text');
 });
 
 // ---------- Mallar ----------

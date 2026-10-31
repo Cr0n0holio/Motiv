@@ -1,13 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Standardbeh\u00f6righeter f\u00f6r huvudf\u00f6nstret",
+  "description": "Standardbehörigheter för huvudfönstret",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
     "core:window:allow-set-title",
-    "core:window:allow-destroy"
+    "core:window:allow-destroy",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

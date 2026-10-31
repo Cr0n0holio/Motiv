@@ -44,5 +44,16 @@
       "icons/icon.png",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhBQUZBQ0NBRTY0RTQwQjgKUldTNFFFN215cXl2aWpoRTV3b3Z4V29MZDAxck8xTXpUV0JEclNERHFSUisxODBZd3hObDRPRGwK",
+      "endpoints": [
+        "https://github.com/Cr0n0holio/Motiv/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }
