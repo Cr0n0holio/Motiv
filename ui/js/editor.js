@@ -1,6 +1,6 @@
 // Editorns canvas: rendering, zoom/panorering, markering, flytta/skala/
 // rotera, fästlinjer, textredigering direkt på canvasen och beskärning.
-import { state, emit, on, commit, select, selected, getById, single, markDirty, pageView, groupMatrix } from './state.js';
+import { state, emit, on, commit, select, selected, getById, single, markDirty, pageView, groupMatrix, groupChain } from './state.js';
 import { rad, deg, rotatePt, clamp, deepClone } from './util.js';
 import { renderDoc, drawElement } from './render.js';
 import { layoutText, syncTextBox, isCurved, fontString, letterSpacingPx, textHitPad } from './text.js';
@@ -97,6 +97,19 @@ export const screenToDoc = (x, y) => {
 };
 /** Den öppnade gruppens rotation på skärmen (för handtag och markörer). */
 const scopeRot = () => { if (!inGroup()) return 0; const m = groupMatrix(); return deg(Math.atan2(m.b, m.a)); };
+/** Speglingen som den öppnade gruppen ger sina delar: { fx, fy } (±1). */
+function scopeFlip() {
+  let fx = 1, fy = 1;
+  for (const g of groupChain()) { if (g.flipX) fx = -fx; if (g.flipY) fy = -fy; }
+  return { fx, fy };
+}
+/** Textens rotation på skärmen; i en speglad grupp ritas texten rättvänd. */
+function textScreenRot(el) {
+  if (!inGroup()) return el.rotation || 0;
+  const { fx, fy } = scopeFlip();
+  const m = groupMatrix().rotate(el.rotation || 0).scale(fx, fy);
+  return deg(Math.atan2(m.b, m.a));
+}
 
 /** Öppnar gruppen under pekaren och markerar delen man pekade på. */
 function enterGroupAt(g, s) {
@@ -198,7 +211,7 @@ function frame() {
     ctx.setTransform(S, 0, 0, S, dpr * px, dpr * py);
     ctx.globalAlpha = 0.28;
     if (inGroup()) { const m = groupMatrix(); ctx.transform(m.a, m.b, m.c, m.d, m.e, m.f); }
-    for (const el of sel) drawElement(ctx, el, S);
+    for (const el of sel) drawElement(ctx, el, S, scopeFlip());
     ctx.restore();
   }
   // Krop-läge: hela bilden svagt
@@ -853,7 +866,7 @@ export function positionTextarea() {
   st.height = `${hh * z}px`;
   st.left = `${c.x - (w * z) / 2}px`;
   st.top = `${c.y - (hh * z) / 2}px`;
-  st.transform = `rotate(${(el.rotation || 0) + scopeRot()}deg)`;
+  st.transform = `rotate(${textScreenRot(el)}deg)`;
   textarea.classList.toggle('visible-text', curved);
   if (curved) st.color = '#111'; else st.color = 'transparent';
   const fillColor = el.fill?.type === 'solid' ? el.fill.color : '#000';

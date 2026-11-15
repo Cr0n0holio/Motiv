@@ -293,10 +293,8 @@ export function ungroupSelection() {
       // … och spegling × rotation θ = rotation (±θ) × spegling, så barnets
       // rotation byter tecken om exakt en axel är speglad.
       let rot = (g.rotation || 0) + (k.rotation || 0) * fx * fy;
-      if (k.type === 'text') {
-        // Text kan inte speglas; dubbel spegling motsvarar dock en halv varv
-        if (fx < 0 && fy < 0) rot += 180;
-      } else {
+      // Text speglas aldrig (den ritas rättvänd även i en speglad grupp)
+      if (k.type !== 'text') {
         k.flipX = !!k.flipX !== (fx < 0);
         k.flipY = !!k.flipY !== (fy < 0);
       }
@@ -464,7 +462,7 @@ const rgbKey = (c) => { const p = parseColor(c); return `${p.r},${p.g},${p.b}`; 
  * Alla färger i ett element (anropar fn med objekt + nyckel). Effekter som är
  * avstängda (skugga, glöd, kantlinje …) räknas bara med om onlyEnabled är falskt.
  */
-function eachColor(el, fn, onlyEnabled = false) {
+export function eachColor(el, fn, onlyEnabled = false) {
   const paint = (p) => {
     if (!p || p.type === 'none') return;
     if (p.type === 'solid') fn(p, 'color');

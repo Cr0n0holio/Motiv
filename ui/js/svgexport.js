@@ -141,7 +141,8 @@ function imageSVG(el, X) {
   return out;
 }
 
-function elementSVG(el, X) {
+// pfx/pfy: -1 om elementet ligger i ett udda antal speglade grupper
+function elementSVG(el, X, pfx = 1, pfy = 1) {
   if (!el.visible) return '';
   const fx = el.type !== 'text' && el.flipX ? -1 : 1, fy = el.type !== 'text' && el.flipY ? -1 : 1;
   let t = `translate(${R(el.x + el.w / 2)} ${R(el.y + el.h / 2)})`;
@@ -151,7 +152,11 @@ function elementSVG(el, X) {
   const op = (el.opacity ?? 1) < 1 ? ` opacity="${R(el.opacity)}"` : '';
   const blend = el.blend && el.blend !== 'normal' ? ` style="mix-blend-mode:${el.blend}"` : '';
   let content = '';
-  if (el.type === 'text') content = textSVG(el, X);
+  if (el.type === 'text') {
+    content = textSVG(el, X);
+    // Text i en speglad grupp vänds tillbaka runt sin mitt (som i editorn)
+    if (pfx < 0 || pfy < 0) content = `<g transform="translate(${R(el.w / 2)} ${R(el.h / 2)}) scale(${pfx} ${pfy}) translate(${R(-el.w / 2)} ${R(-el.h / 2)})">${content}</g>`;
+  }
   else if (el.type === 'shape') content = shapeSVG(el, X);
   else if (el.type === 'image') content = imageSVG(el, X);
   else if (el.type === 'icon') {
@@ -162,7 +167,7 @@ function elementSVG(el, X) {
     content = (el.background?.enabled ? `<rect width="${R(el.w)}" height="${R(el.h)}" ${svgColorAttrs(el.background.color)}/>` : '')
       + (L ? `<path transform="translate(${R(L.ox)} ${R(L.oy)}) scale(${R(L.s)})" d="${L.q.d}" ${svgColorAttrs(el.color)}/>` : '');
   }
-  else if (el.type === 'group') content = el.children.map((c) => elementSVG(c, X)).join('');
+  else if (el.type === 'group') content = el.children.map((c) => elementSVG(c, X, pfx * fx, pfy * fy)).join('');
   return `<g transform="${t}"${op}${blend}>${content}</g>`;
 }
 

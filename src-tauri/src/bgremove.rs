@@ -6,6 +6,7 @@ use crate::util::{app_subdir, err, strip_data_url};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use image::{imageops::FilterType, DynamicImage, GrayImage, ImageFormat, Luma, RgbaImage};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::io::{Cursor, Write};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
@@ -17,6 +18,8 @@ struct ModelDef {
     description: &'static str,
     url: &'static str,
     size_mb: u32,
+    /// SHA-256 för modellfilen; en nedladdning som inte stämmer kastas
+    sha256: &'static str,
     input: usize,
     mean: [f32; 3],
     std: [f32; 3],
@@ -29,6 +32,7 @@ const MODELS: &[ModelDef] = &[
         description: "U²-Net lite – liten och snabb, bra för tydliga motiv",
         url: "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx",
         size_mb: 5,
+        sha256: "309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8",
         input: 320,
         mean: [0.485, 0.456, 0.406],
         std: [0.229, 0.224, 0.225],
@@ -39,6 +43,7 @@ const MODELS: &[ModelDef] = &[
         description: "U²-Net – noggrannare kanter, allround",
         url: "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx",
         size_mb: 168,
+        sha256: "8d10d2f3bb75ae3b6d527c77944fc5e7dcd94b29809d47a739a7a728a912b491",
         input: 320,
         mean: [0.485, 0.456, 0.406],
         std: [0.229, 0.224, 0.225],
@@ -49,6 +54,7 @@ const MODELS: &[ModelDef] = &[
         description: "U²-Net tränad på människor – bäst för porträtt",
         url: "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net_human_seg.onnx",
         size_mb: 168,
+        sha256: "01eb6a29a5c4d8edb30b56adad9bb3a2a0535338e480724a213e0acfd2d1c73c",
         input: 320,
         mean: [0.485, 0.456, 0.406],
         std: [0.229, 0.224, 0.225],
@@ -59,6 +65,7 @@ const MODELS: &[ModelDef] = &[
         description: "IS-Net – skarpast kanter, långsammare (1024 px)",
         url: "https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx",
         size_mb: 170,
+        sha256: "60920e99c45464f2ba57bee2ad08c919a52bbf852739e96947fbb4358c0d964a",
         input: 1024,
         mean: [0.5, 0.5, 0.5],
         std: [1.0, 1.0, 1.0],
@@ -132,6 +139,7 @@ pub async fn bg_download_model(app: AppHandle, id: String) -> Result<(), String>
     let result = async {
         let mut file = std::fs::File::create(&part).map_err(err)?;
         let mut downloaded: u64 = 0;
+        let mut hasher = Sha256::new();
         let mut last_emit: u64 = 0;
         while let Some(chunk) = resp
             .chunk()
@@ -139,6 +147,7 @@ pub async fn bg_download_model(app: AppHandle, id: String) -> Result<(), String>
             .map_err(|e| format!("Nedladdningen avbröts: {e}"))?
         {
             file.write_all(&chunk).map_err(err)?;
+            hasher.update(&chunk);
             downloaded += chunk.len() as u64;
             if downloaded - last_emit > 256 * 1024 || downloaded >= total {
                 last_emit = downloaded;
@@ -148,6 +157,11 @@ pub async fn bg_download_model(app: AppHandle, id: String) -> Result<(), String>
         file.flush().map_err(err)?;
         if expected.is_some_and(|n| n != downloaded) {
             return Err("Nedladdningen blev inte komplett, försök igen".to_string());
+        }
+        // Filen ska vara exakt den modell appen är byggd för
+        let digest: String = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
+        if digest != def.sha256 {
+            return Err("Den nedladdade modellen stämmer inte med den förväntade filen (fel checksumma)".to_string());
         }
         Ok(())
     }

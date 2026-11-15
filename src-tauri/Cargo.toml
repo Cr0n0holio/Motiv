@@ -29,6 +29,7 @@ pdf-writer = "0.12"
 # Automatiska uppdateringar från GitHub-releaserna (och omstart efteråt)
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+sha2 = "0.10"
 
 [features]
 # custom-protocol bäddar in ui/-mappen i exe-filen så att `cargo run` fungerar direkt.

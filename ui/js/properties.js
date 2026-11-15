@@ -35,7 +35,7 @@ export function initProperties(el) {
 }
 
 let lastSig = '';
-const signature = () => selected().map((e) => e.id + ':' + e.type + ':' + (e.kind || '') + ':' + (e.curve?.mode || '') + ':' + (e.maskShape || '') + ':' + !!e.maskAssetId + ':' + e.locked + ':' + (e.stroke?.enabled ?? '')).join(',') + '|' + !!state.doc.background.image + '|' + state.cropId;
+const signature = () => selected().map((e) => e.id + ':' + e.type + ':' + (e.kind || '') + ':' + (e.curve?.mode || '') + ':' + (e.maskShape || '') + ':' + !!e.maskAssetId + ':' + (e.type === 'image' ? !!e.assetId : '') + ':' + e.locked + ':' + (e.stroke?.enabled ?? '')).join(',') + '|' + !!state.doc.background.image + '|' + state.cropId;
 function structureChanged() { return signature() !== lastSig; }
 
 /** Ändrar alla markerade element. final = registrera ångringssteg. */

@@ -121,6 +121,7 @@ ui/                    Gränssnittet (laddas direkt av Tauri, inget byggsteg)
     fonts.js           Fonthantering
     properties.js      Högerpanelen
     leftpanel.js       Vänsterpanelen (format, text, element, bilder, bakgrund, lager)
+    templates.js       Startmallarna
     colorpicker.js / fontpicker.js / controls.js / dialogs.js / exporter.js / bgremoval.js
 src-tauri/             Rust
   src/main.rs          Kommandon som gränssnittet anropar

@@ -2,7 +2,7 @@
 // gradientredigerare (linjär/radiell, flera stopp, vinkel).
 import { h, parseColor, toHex, rgbToHsv, hsvToRgb, clamp, deepClone } from './util.js';
 import { state, allElements } from './state.js';
-import { addPaletteColor, removePaletteColor } from './actions.js';
+import { addPaletteColor, removePaletteColor, eachColor } from './actions.js';
 import { paintCss, GRADIENT_PRESETS } from './paint.js';
 
 const PALETTE = [
@@ -30,13 +30,9 @@ function docColors() {
     if (p.type === 'solid') set.add(p.color.toLowerCase());
     else if (p.stops) p.stops.forEach((s) => set.add(s.color.toLowerCase()));
   };
-  const walk = (els) => els.forEach((e) => {
-    addPaint(e.fill);
-    if (e.stroke?.enabled) set.add(e.stroke.color.toLowerCase());
-    if (e.type === 'group') walk(e.children);
-  });
-  // Färger från alla sidor, så att samma färger är lätta att återanvända
-  walk(allElements());
+  // Färger från alla sidor, så att samma färger är lätta att återanvända:
+  // fyllningar, ikoner, QR-koder och påslagna effekter (kantlinje, skugga …)
+  allElements().forEach((e) => eachColor(e, (o, k) => { if (typeof o[k] === 'string') set.add(o[k].toLowerCase()); }, true));
   state.doc.pages.forEach((p) => addPaint(p.background.fill));
   return [...set].filter((c) => c.length <= 9).slice(0, 18);
 }

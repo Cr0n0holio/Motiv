@@ -1,6 +1,6 @@
 // Renderar varje mall med appens egen renderingskod och skickar bilden till
 // mallbilder.py, som sparar den i ui/img/mallar.
-import { TEMPLATES, templateSlug } from '../ui/js/leftpanel.js';
+import { TEMPLATES, templateSlug } from '../ui/js/templates.js';
 import { invalidateTextCache } from '../ui/js/text.js';
 import { relayoutAllText } from '../ui/js/actions.js';
 import { renderToCanvas } from '../ui/js/render.js';

@@ -8,7 +8,7 @@ import { renderToCanvas } from '../ui/js/render.js';
 import { layoutText, textPlateRect } from '../ui/js/text.js';
 import { buildSVG } from '../ui/js/svgexport.js';
 import { shrinkImage, alphaAt, ensureImage } from '../ui/js/images.js';
-import { TEMPLATES, templateSlug } from '../ui/js/leftpanel.js';
+import { TEMPLATES, templateSlug } from '../ui/js/templates.js';
 import { gradientLine } from '../ui/js/paint.js';
 import { resizedView, renderExportCanvas } from '../ui/js/exporter.js';
 import { parseColor } from '../ui/js/util.js';
@@ -115,6 +115,25 @@ test('avgruppering av en roterad och speglad grupp ändrar inte bilden', () => {
     const before = snapshotPixels();
     A.ungroupSelection();
     eq(pixelDiff(before, snapshotPixels()), 0, `spegling ${fx},${fy}:`);
+  }
+});
+
+test('text i en speglad grupp förblir rättvänd, och avgruppering ändrar inte bilden', () => {
+  for (const [fx, fy] of [[true, false], [false, true], [true, true]]) {
+    fresh();
+    const t = A.addText('heading', { text: 'ABC', fontSize: 160 }); t.rotation = 15; t.x -= 150;
+    const b = A.addShape('rect'); b.y += 300;
+    const plain = snapshotPixels();
+    S.select([t.id, b.id]); A.groupSelection();
+    const g = S.single(); g.flipX = fx; g.flipY = fy;
+    const flipped = snapshotPixels();
+    A.ungroupSelection();
+    eq(pixelDiff(flipped, snapshotPixels()), 0, `avgruppering, spegling ${fx},${fy}:`);
+    const txt = S.state.doc.elements.find((e) => e.type === 'text');
+    ok(!txt.flipX && !txt.flipY, 'texten blev speglad');
+    // Speglad åt båda hållen = ett halvt varv för gruppen, men texten står kvar rättvänd
+    if (fx && fy) near(txt.rotation, 15, 0.01, 'textens rotation:');
+    ok(plain.length === flipped.length);
   }
 });
 

@@ -153,13 +153,22 @@ export function drawElement(ctx, el, scale, opts = {}) {
   ctx.translate(-el.w / 2, -el.h / 2);
 
   switch (el.type) {
-    case 'text': drawText(ctx, el, scale); break;
+    case 'text':
+      // Text speglas aldrig: ligger den i en speglad grupp vänds den tillbaka
+      // runt sin egen mitt, så att den följer med i läge men förblir läsbar.
+      if (opts.fx < 0 || opts.fy < 0) {
+        ctx.translate(el.w / 2, el.h / 2);
+        ctx.scale(opts.fx < 0 ? -1 : 1, opts.fy < 0 ? -1 : 1);
+        ctx.translate(-el.w / 2, -el.h / 2);
+      }
+      drawText(ctx, el, scale);
+      break;
     case 'shape': drawShape(ctx, el, scale); break;
     case 'image': drawImageEl(ctx, el, scale, opts); break;
     case 'icon': drawIcon(ctx, el); break;
     case 'qr': drawQR(ctx, el); break;
     case 'group':
-      for (const ch of el.children) drawElement(ctx, ch, scale, { ...opts, skipId: null });
+      for (const ch of el.children) drawElement(ctx, ch, scale, { ...opts, skipId: null, fx: (opts.fx || 1) * (el.flipX ? -1 : 1), fy: (opts.fy || 1) * (el.flipY ? -1 : 1) });
       break;
   }
   ctx.restore();
