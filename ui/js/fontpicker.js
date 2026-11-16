@@ -4,6 +4,7 @@ import { fontState, GOOGLE_FONTS, ensureFamily, isAvailable, addCustomFonts, rem
 import { isTauri } from './bridge.js';
 import { on, emit } from './state.js';
 import { icon } from './controls.js';
+import { activeKit } from './brand.js';
 
 let pop = null;
 let outside = null;
@@ -79,6 +80,7 @@ export function openFontPicker(anchor, current, onPick) {
       list.append(h('div', { class: 'fp-sec' }, title));
       items.forEach((f) => list.append(row(f, kind)));
     };
+    if (tab === 'all' && !q && activeKit()?.fonts.length) sec(`Varumärke · ${activeKit().name}`, activeKit().fonts, 'recent');
     if (tab === 'all' && !q && fontState.recent.length) sec('Senast använda', fontState.recent, 'recent');
     if (tab === 'all' || tab === 'custom') sec('Egna fonter', customs, 'custom');
     if (tab === 'all' || tab === 'google') sec('Google Fonts', GOOGLE_FONTS, 'google');

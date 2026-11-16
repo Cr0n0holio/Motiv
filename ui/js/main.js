@@ -12,6 +12,7 @@ import {
 import { initProperties, chooseImageFor } from './properties.js';
 import { initToolbar } from './toolbar.js';
 import { openBulkDialog } from './bulk.js';
+import { initBrand } from './brand.js';
 import { initLeftPanel, openTab, uploadImages, buildTemplate, toPx } from './leftpanel.js';
 import { openStartScreen, startScreenOpen } from './start.js';
 import { renderToCanvas } from './render.js';
@@ -595,6 +596,7 @@ async function boot() {
   updateTitle();
   if (!isTauri) document.body.classList.add('browser-mode');
   showStart(await readAutosave());
+  initBrand();
   await initFonts();
   initUpdates({ save: () => saveProject(false) });
 }

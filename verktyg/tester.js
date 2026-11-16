@@ -17,6 +17,7 @@ import { ICON_LIST } from '../ui/js/icondata.js';
 import { qrPath } from '../ui/js/qr.js';
 import { parseDelimited, decodeText, parseXlsx } from '../ui/js/tabledata.js';
 import { pageFields, guessMapping, fillPage, placeholdersIn } from '../ui/js/bulk.js';
+import * as Brand from '../ui/js/brand.js';
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -492,6 +493,50 @@ test('massproduktion: en sida per rad med platshållare, koppling och krympt tex
   S.undo();
   eq(S.state.doc.pages.length, 1);
   eq(S.state.doc.pages[0].elements[0].text, 'Namn');
+});
+
+// ---------- Varumärkespaket ----------
+test('varumärkespaket: färger, fonter, logotyper, export och import', () => {
+  Brand.resetBrandForTest();
+  eq(Brand.activeKit(), null);
+  const kit = Brand.createKit('Kund AB');
+  eq(Brand.addBrandColor('#FF0000'), 0);
+  eq(Brand.addBrandColor('#ff0000'), 0, 'samma färg läggs inte till två gånger:');
+  Brand.addBrandColor('#00ff00');
+  Brand.setBrandColor(1, '#0000FF');
+  Brand.addBrandFont('Poppins'); Brand.addBrandFont('Poppins');
+  const png = 'data:image/png;base64,iVBORw0KGgo=';
+  Brand.addBrandLogo('logga.png', png); Brand.addBrandLogo('logga.png', png);
+  eq([kit.colors, kit.fonts, kit.logos.map((l) => l.name)], [['#ff0000', '#0000ff'], ['Poppins'], ['logga']]);
+  const text = Brand.exportKit(kit);
+  Brand.deleteKit(kit.id);
+  eq(Brand.brandKits().length, 0);
+  const back = Brand.importKit(text);
+  ok(back.id !== kit.id, 'importen får ett eget id');
+  eq([back.name, back.colors, back.fonts, back.logos.length], ['Kund AB', ['#ff0000', '#0000ff'], ['Poppins'], 1]);
+  eq(Brand.activeKit().id, back.id);
+  // Trasigt innehåll rensas, och en vanlig projektfil avvisas
+  const odd = Brand.importKit(JSON.stringify({ kind: 'brandkit', kit: { name: 'X', colors: ['röd', '#abc', '#123456'], fonts: [5, 'Inter'], logos: [{ dataURL: 'javascript:alert(1)' }] } }));
+  eq([odd.colors, odd.fonts, odd.logos], [['#123456'], ['Inter'], []]);
+  let fel = '';
+  try { Brand.importKit(S.serializeDoc()); } catch (e) { fel = e.message; }
+  ok(fel.includes('varumärkespaket'), 'en projektfil är inte ett paket');
+  Brand.resetBrandForTest();
+});
+
+test('varumärkets färg och font används på det markerade', () => {
+  fresh();
+  const t = A.addText('heading', { text: 'abc def' });
+  setRange(t, 0, 3, { color: '#00ff00' });
+  const sh = A.addShape('rect'), ln = A.addShape('line'), ic = A.addIcon(ICON_LIST[0]);
+  S.select([t.id, sh.id, ln.id, ic.id]);
+  eq(A.applyColorToSelection('#123456'), 4);
+  eq([t.fill.color, t.runs, sh.fill.color, ln.stroke.color, ic.color], ['#123456', undefined, '#123456', '#123456', '#123456']);
+  eq(A.applyFontToSelection('Georgia'), 1);
+  eq(t.fontFamily, 'Georgia');
+  S.select([]);
+  eq(A.applyColorToSelection('#000000'), 0);
+  ok(A.topDesignColors().includes('#123456'));
 });
 
 // ---------- Kopiera stil ----------

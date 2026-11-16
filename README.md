@@ -65,6 +65,9 @@ Skriptet installerar systempaket, Rust och Tauri CLI vid behov och lägger
 - **Kopiera stil** mellan element med penseln i verktygsraden eller Ctrl+Alt+C / Ctrl+Alt+V
 - Lager: dra för att ändra ordning, dölj, lås, byt namn
 - Opacitet och 16 blandningslägen
+- **Varumärkespaket**: färger, fonter och logotyper som sparas i appen och finns i alla
+  designer (fliken Varumärke, färgväljaren och fontväljaren). Flera paket, t.ex. ett per
+  kund, och export/import som fil
 - **Färgpalett** för designen: spara färger, hämta dem från designen, och byt en
   palettfärg för att ändra den överallt i designen på en gång
 - Gruppera, justera, fördela, spegla, rotera, fästlinjer (smart snapping)
@@ -127,6 +130,7 @@ ui/                    Gränssnittet (laddas direkt av Tauri, inget byggsteg)
     main.js            Start, menyer, kortkommandon, fil, autosparning
     start.js           Startsidan
     bulk.js            Sidor från en lista (massproduktion)
+    brand.js           Varumärkespaket (sparas i IndexedDB)
     tabledata.js       Läser CSV och Excel-filer (.xlsx)
     pages.js           Sidor: sidremsan och sidåtgärder
     editor.js          Canvas: rendering, markering, transformering, text/krop

@@ -6,6 +6,7 @@ import { uid, rotatePt, deepClone, loadImage, clamp, parseColor, toHex } from '.
 import { syncTextBox, layoutText } from './text.js';
 import { ensureTextFont } from './fonts.js';
 import { shrinkImage, shrinkEnabled, coverCrop } from './images.js';
+import { clearRunProp } from './richtext.js';
 
 // ---------- Geometri ----------
 export function corners(el) {
@@ -671,4 +672,45 @@ export function pasteStyle() {
 export function setStylePainter(on) {
   state.stylePainter = !!on && copyStyle();
   emit('styleclip');
+}
+
+// ---------- Varumärkespaket: använd på markeringen ----------
+
+/** Ger de markerade elementen färgen (textfärg, fyllning, linje- eller ikonfärg). Returnerar antalet. */
+export function applyColorToSelection(color) {
+  let n = 0;
+  for (const el of selected()) {
+    if (el.locked) continue;
+    if (el.type === 'text') { el.fill = { type: 'solid', color }; clearRunProp(el, 'color'); }
+    else if (el.type === 'shape') { if (el.kind === 'line' || el.kind === 'arrow') el.stroke.color = color; else el.fill = { type: 'solid', color }; }
+    else if (el.type === 'icon' || el.type === 'qr') el.color = color;
+    else continue;
+    n++;
+  }
+  if (n) { emit('doc'); commit(); }
+  return n;
+}
+
+/** Byter font på de markerade texterna. Returnerar antalet. */
+export function applyFontToSelection(family) {
+  const els = selected().filter((e) => e.type === 'text' && !e.locked);
+  for (const el of els) {
+    el.fontFamily = family;
+    syncTextBox(el, 'center');
+    ensureTextFont(el).then(() => { syncTextBox(el, 'center'); emit('doc'); });
+  }
+  if (els.length) { emit('doc'); commit(); }
+  return els.length;
+}
+
+/** De vanligaste färgerna i designen (utan att ändra paletten). */
+export function topDesignColors(max = 8) {
+  const count = new Map();
+  const add = (c) => { if (typeof c !== 'string' || parseColor(c).a < 0.5) return; const h = toHex({ ...parseColor(c), a: 1 }); count.set(h, (count.get(h) || 0) + 1); };
+  for (const p of state.doc.pages) {
+    p.elements.forEach((el) => eachColor(el, (o, k) => add(o[k]), true));
+    const f = p.background.fill;
+    if (f?.type === 'solid') add(f.color); else f?.stops?.forEach((st) => add(st.color));
+  }
+  return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c).slice(0, max);
 }

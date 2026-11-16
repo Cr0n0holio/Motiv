@@ -475,3 +475,14 @@ button.brand:hover { background: var(--panel-2); }
 .bulk-nav { display: flex; align-items: center; gap: 10px; }
 .bulk-nav .icon-btn { font-size: 20px; }
 .bulk-warn { color: #fbbf24; text-align: center; min-height: 16px; }
+
+/* ---------- Varumärke ---------- */
+.big-swatch.brand-add { display: flex; align-items: center; justify-content: center; background: none; border: 1.5px dashed var(--line-2); color: var(--text-2); }
+.big-swatch.brand-add .ic { width: 16px; height: 16px; }
+.brand-fonts { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.brand-font { display: flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); }
+.brand-font:hover { border-color: var(--accent); }
+.brand-font-name { flex: 1; min-width: 0; text-align: left; background: none; border: 0; color: var(--text); padding: 8px 10px; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brand-font .icon-btn { width: 28px; height: 28px; margin-right: 3px; }
+.asset.brand-logo { background: repeating-conic-gradient(#3a3b48 0 25%, #2c2d38 0 50%) 0 0 / 14px 14px; }
+.asset.brand-logo img { object-fit: contain; padding: 6px; }

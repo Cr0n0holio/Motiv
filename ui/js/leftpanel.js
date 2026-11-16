@@ -12,8 +12,10 @@ import { renderElementThumb } from './render.js';
 import { shrinkEnabled, setShrinkEnabled } from './images.js';
 import { ICON_LIST } from './icondata.js';
 import { TEMPLATES, TEMPLATE_CATS, templateSlug } from './templates.js';
-import { pickImages } from './bridge.js';
-import { toast, modal } from './dialogs.js';
+import { pickImages, saveText, openText } from './bridge.js';
+import { toast, modal, confirmDialog } from './dialogs.js';
+import { openFontPicker } from './fontpicker.js';
+import { brandKits, activeKit, setActiveKit, createKit, renameKit, deleteKit, addBrandColor, setBrandColor, removeBrandColor, addBrandFont, removeBrandFont, addBrandLogo, removeBrandLogo, exportKit, importKit } from './brand.js';
 import { openColorPicker } from './colorpicker.js';
 import { createImage } from './state.js';
 
@@ -22,6 +24,7 @@ const TABS = [
   ['text', 'text', 'Text'],
   ['elements', 'shapes', 'Element'],
   ['uploads', 'upload', 'Bilder'],
+  ['brand', 'brand', 'Varumärke'],
   ['background', 'palette', 'Bakgrund'],
   ['layers', 'layers', 'Lager'],
 ];
@@ -36,6 +39,7 @@ export function initLeftPanel(railEl, panelEl) {
     rail.append(b);
   }
   on('open-tab', (k) => openTab(k));
+  on('brand', () => { if (current === 'brand' && !panel.classList.contains('collapsed')) openTab('brand', true); });
   on('assets', () => { if (current === 'uploads' || current === 'background') openTab(current, true); });
   const refreshLayers = debounce(() => { if (current === 'layers') builders.layers(true); }, 120);
   on('doc', refreshLayers);
@@ -177,6 +181,101 @@ builders.format = () => {
     )),
   );
 };
+
+// ---------------- Varumärke ----------------
+/** Fråga efter ett namn. Returnerar texten, eller null om det avbröts. */
+function askName(title, value) {
+  return new Promise((resolve) => {
+    let answer = null;
+    const inp = h('input', { class: 'select', value, maxlength: 60 });
+    inp.addEventListener('keydown', (e) => e.stopPropagation());
+    modal({ title, body: h('div', null, inp), onClose: () => resolve(answer), actions: [{ label: 'Avbryt' }, { label: 'Spara', primary: true, onClick: () => { answer = inp.value.trim() || null; } }] });
+    setTimeout(() => { inp.focus(); inp.select(); }, 30);
+  });
+}
+
+builders.brand = () => {
+  const kit = activeKit();
+  const importBtn = h('button', { class: 'btn full', onclick: async () => {
+    try {
+      const f = await openText(KIT_FILTER);
+      if (f) toast(`Importerade "${importKit(f.text).name}"`, 'ok');
+    } catch (e) { toast(String(e.message || e), 'error'); }
+  } }, icon('upload'), 'Importera paket…');
+  const newKit = async () => { const name = await askName('Nytt varumärkespaket', 'Mitt varumärke'); if (name) createKit(name); };
+
+  if (!kit) {
+    panel.append(
+      head('Varumärke', 'Spara dina färger, fonter och logotyper en gång och använd dem i alla designer.'),
+      h('div', { class: 'lp-section' },
+        h('button', { class: 'btn primary full big', onclick: newKit }, icon('plus'), 'Skapa varumärkespaket'),
+        h('div', { style: { height: '8px' } }), importBtn),
+    );
+    return;
+  }
+
+  const kitSel = h('select', { class: 'select' }, brandKits().map((k) => h('option', { value: k.id }, k.name)));
+  kitSel.value = kit.id;
+  kitSel.addEventListener('change', () => setActiveKit(kitSel.value));
+
+  // Färger: klick använder färgen på det markerade, högerklick tar bort
+  const useColor = (c) => { if (!A.applyColorToSelection(c)) toast('Markera en text, form eller ikon för att använda färgen', 'info'); };
+  const colors = h('div', { class: 'swatch-grid' }, kit.colors.map((c, i) => {
+    const b = h('button', { class: 'big-swatch', style: { background: c }, title: `${c} – klicka för att använda, högerklicka för att ta bort`, onclick: () => useColor(c) });
+    b.addEventListener('contextmenu', (e) => { e.preventDefault(); removeBrandColor(i); });
+    return b;
+  }));
+  const addColor = h('button', { class: 'big-swatch brand-add', title: 'Lägg till en färg' }, icon('plus'));
+  addColor.addEventListener('click', () => {
+    // Färgen läggs till direkt och ändras sedan i väljaren
+    let i = -1;
+    openColorPicker(addColor, { value: '#8b5cf6', onChange: (v, final) => {
+      if (i < 0) { if (!final) return; i = addBrandColor(v); return; }
+      setBrandColor(i, v, final);
+    } });
+  });
+  colors.append(addColor);
+
+  // Fonter
+  const useFont = (f) => { if (!A.applyFontToSelection(f)) toast('Markera en text för att använda fonten', 'info'); };
+  kit.fonts.forEach((f) => ensureFamily(f));
+  const fonts = h('div', { class: 'brand-fonts' }, kit.fonts.map((f) => h('div', { class: 'brand-font' },
+    h('button', { class: 'brand-font-name', style: { fontFamily: `"${f}", "Segoe UI", sans-serif` }, title: 'Använd på markerad text', onclick: () => useFont(f) }, f),
+    h('button', { class: 'icon-btn', title: 'Ta bort ur paketet', onclick: () => removeBrandFont(f) }, icon('close')))));
+  const addFont = h('button', { class: 'btn full' }, icon('plus'), 'Lägg till font…');
+  addFont.addEventListener('click', () => openFontPicker(addFont, single()?.fontFamily || '', (family) => addBrandFont(family)));
+
+  // Logotyper: klick lägger logotypen på sidan (eller i den markerade ramen)
+  const logos = h('div', { class: 'asset-grid' }, kit.logos.map((l) => {
+    const b = h('button', { class: 'asset brand-logo', title: `${l.name} – klicka för att lägga till, högerklicka för att ta bort`, onclick: async () => {
+      const sel = single();
+      if (sel?.type === 'image' && sel.frame) await A.fillFrame(sel, l.dataURL); else await A.addImageFromDataURL(l.dataURL, { name: l.name });
+    } }, h('img', { src: l.dataURL, draggable: false }));
+    b.addEventListener('contextmenu', (e) => { e.preventDefault(); removeBrandLogo(l.id); });
+    return b;
+  }));
+  const addLogo = h('button', { class: 'btn full', onclick: async () => { for (const f of await pickImages()) addBrandLogo(f.name, f.dataURL); } }, icon('upload'), 'Lägg till logotyp…');
+
+  panel.append(
+    head('Varumärke', 'Finns i alla designer på den här datorn.'),
+    h('div', { class: 'lp-section' },
+      kitSel,
+      h('div', { class: 'row tight', style: { marginTop: '8px' } },
+        h('button', { class: 'btn small', onclick: newKit }, icon('plus'), 'Nytt'),
+        h('button', { class: 'btn small', onclick: async () => { const name = await askName('Byt namn på paketet', kit.name); if (name) renameKit(kit.id, name); } }, 'Byt namn'),
+        h('button', { class: 'btn small danger-ghost', onclick: async () => { if (await confirmDialog('Ta bort paketet?', `"${kit.name}" tas bort från appen. Designer som redan använder färgerna, fonterna eller logotyperna påverkas inte.`, { ok: 'Ta bort', danger: true })) deleteKit(kit.id); } }, 'Ta bort'))),
+    h('div', { class: 'lp-section' }, h('h4', null, 'Färger'), colors,
+      h('div', { class: 'btn-grid two', style: { marginTop: '10px' } },
+        h('button', { class: 'btn small', title: 'Lägger till designens vanligaste färger i paketet', onclick: () => { const cs = state.doc.palette.length ? state.doc.palette : A.topDesignColors(); cs.forEach((c) => addBrandColor(c)); if (!cs.length) toast('Designen har inga färger att hämta', 'info'); } }, 'Hämta från designen'),
+        h('button', { class: 'btn small', title: 'Lägger paketets färger i den här designens palett', onclick: () => { kit.colors.forEach((c) => A.addPaletteColor(c)); toast('Färgerna finns nu i designens palett', 'ok'); } }, 'Lägg i paletten'))),
+    h('div', { class: 'lp-section' }, h('h4', null, 'Fonter'), fonts, addFont),
+    h('div', { class: 'lp-section' }, h('h4', null, 'Logotyper'), kit.logos.length ? logos : h('p', { class: 'muted small' }, 'Inga logotyper ännu.'), h('div', { style: { height: '8px' } }), addLogo),
+    h('div', { class: 'lp-section' }, h('h4', null, 'Flytta paketet'),
+      h('button', { class: 'btn full', onclick: async () => { try { if (await saveText(exportKit(kit), `${kit.name}.motivkit`, KIT_FILTER)) toast('Paketet exporterat', 'ok'); } catch (e) { toast(String(e.message || e), 'error'); } } }, icon('download'), 'Exportera paket…'),
+      h('div', { style: { height: '8px' } }), importBtn),
+  );
+};
+const KIT_FILTER = [{ name: 'Motiv-varumärkespaket', extensions: ['motivkit'] }];
 
 // ---------------- Text ----------------
 export const TEXT_PRESETS = [

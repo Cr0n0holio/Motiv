@@ -4,6 +4,7 @@ import { h, parseColor, toHex, rgbToHsv, hsvToRgb, clamp, deepClone } from './ut
 import { state, allElements } from './state.js';
 import { addPaletteColor, removePaletteColor, eachColor } from './actions.js';
 import { paintCss, GRADIENT_PRESETS } from './paint.js';
+import { activeKit } from './brand.js';
 
 const PALETTE = [
   '#000000', '#3f3f46', '#71717a', '#a1a1aa', '#d4d4d8', '#ffffff',
@@ -110,6 +111,8 @@ export function openColorPicker(anchor, opts) {
     opts.allowNone && !isPaint ? h('button', { class: 'btn small full', onclick: () => { setCur('#00000000', true); } }, 'Genomskinlig') : null,
     h('div', { class: 'cp-label' }, 'Designens palett', h('span', { class: 'muted cp-hint' }, ' · högerklick tar bort')),
     paletteRow(),
+    activeKit()?.colors.length ? h('div', { class: 'cp-label' }, `Varumärke · ${activeKit().name}`) : null,
+    activeKit()?.colors.length ? swatches(activeKit().colors) : null,
     h('div', { class: 'cp-label' }, 'Dokumentfärger'),
     swatches(docColors()),
     state.recentColors.length ? h('div', { class: 'cp-label' }, 'Senaste') : null,
