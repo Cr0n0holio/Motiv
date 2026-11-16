@@ -1,8 +1,9 @@
 // Startmallarna. Varje mall bygger ett dokument med en sida; koordinaterna är
 // elementens mittpunkter i sidans pixlar. Förhandsbilderna i ui/img/mallar tas
 // fram med verktyg/mallbilder.py när en mall ändras eller läggs till.
-import { createText, createShape, newDoc } from './state.js';
+import { createText, createShape, createImage, createIcon, createQR, createGroup, newDoc } from './state.js';
 import { syncTextBox } from './text.js';
+import { ICON_LIST } from './icondata.js';
 
 const T = (o) => createText(o);
 const S = (k, o) => createShape(k, o);
@@ -10,6 +11,10 @@ function place(el, x, y) { syncTextBox(el, 'center'); el.x = x - el.w / 2; el.y 
 function placeShape(el, x, y, w, hh) { el.w = w; el.h = hh; el.x = x - w / 2; el.y = y - hh / 2; return el; }
 const solid = (color) => ({ type: 'solid', color });
 const lin = (angle, ...colors) => ({ type: 'linear', angle, stops: colors.map((color, i) => ({ offset: i / (colors.length - 1), color })) });
+// Ikon ur ikonbiblioteket, tom fotoram och QR-kod (x, y = mittpunkt)
+const I = (id, x, y, s, color, o = {}) => placeShape(createIcon(ICON_LIST.find((i) => i.id === id), { color, ...o }), x, y, s, s);
+const F = (x, y, w, hh, o = {}) => placeShape(createImage(null, w, hh, { name: 'Ram', frame: true, ...o }), x, y, w, hh);
+const Q = (text, x, y, s, o = {}) => placeShape(createQR(text, o), x, y, s, s);
 const WEEKDAYS = ['Måndag', 'Tisdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lördag', 'Söndag'];
 const DAY_COLORS = ['#e76f51', '#f4a261', '#d4a017', '#2a9d8f', '#264653', '#6a994e', '#b56576'];
 const line = (x, y, w, color, width, rotation = 0) => placeShape(S('line', { rotation, stroke: { enabled: true, color, width, dash: 'solid' } }), x, y, w, Math.max(20, width * 3));
@@ -82,7 +87,7 @@ export const TEMPLATES = [
         placeShape(S('blob', { fill: lin(135, '#22d3ee', '#a855f7') }), 800, 280, 620, 620),
         placeShape(S('ring', { innerRatio: 0.7, fill: solid('#f472b6') }), 960, 960, 220, 220),
         place(T({ text: 'NYHET', fontFamily: 'Unbounded', fontWeight: 800, fontSize: 56, width: 900, align: 'left', letterSpacing: 400, fill: solid('#22d3ee') }), 540, 470),
-        place(T({ text: 'Vår nya\nkollektion\när här', fontFamily: 'Unbounded', fontWeight: 800, fontSize: 104, width: 900, align: 'left', lineHeight: 1.05, fill: solid('#ffffff') }), 540, 680),
+        place(T({ text: 'Vår nya\nkollektion\när här', runs: [{ n: 8 }, { n: 10, color: '#22d3ee' }, { n: 7 }], fontFamily: 'Unbounded', fontWeight: 800, fontSize: 104, width: 900, align: 'left', lineHeight: 1.05, fill: solid('#ffffff') }), 540, 680),
         placeShape(S('rounded', { radius: 45, fill: solid('#ffffff') }), 250, 950, 320, 90),
         place(T({ text: 'Läs mer →', fontFamily: 'Montserrat', fontWeight: 700, fontSize: 38, width: 300, fill: solid('#0f172a') }), 250, 950),
       );
@@ -147,7 +152,7 @@ export const TEMPLATES = [
         place(T({ text: 'VI SÖKER', fontFamily: 'Archivo Black', fontWeight: 400, fontSize: 60, width: 900, align: 'left', letterSpacing: 200, fill: solid('#065f46') }), 540, 270),
         place(T({ text: 'Junior\nutvecklare', fontFamily: 'Archivo Black', fontWeight: 400, fontSize: 124, width: 900, align: 'left', lineHeight: 1.0, fill: solid('#022c22') }), 540, 470),
         place(T({ text: 'till vårt team i Umeå', fontFamily: 'Poppins', fontWeight: 500, fontSize: 46, width: 900, align: 'left', fill: solid('#065f46') }), 540, 670),
-        place(T({ text: '•  Hybridjobb\n•  Friskvårdsbidrag\n•  Trevliga kollegor', fontFamily: 'Poppins', fontWeight: 500, fontSize: 44, width: 900, align: 'left', lineHeight: 1.6, fill: solid('#022c22') }), 540, 890),
+        place(T({ text: 'Hybridjobb\nFriskvårdsbidrag\nTrevliga kollegor', list: 'bullet', fontFamily: 'Poppins', fontWeight: 500, fontSize: 44, width: 900, align: 'left', lineHeight: 1.6, fill: solid('#022c22') }), 540, 890),
         placeShape(S('rounded', { radius: 50, fill: solid('#059669') }), 310, 1170, 440, 100),
         place(T({ text: 'Ansök senast 30/11', fontFamily: 'Montserrat', fontWeight: 700, fontSize: 34, width: 420, fill: solid('#ffffff') }), 310, 1170),
       );
@@ -180,7 +185,7 @@ export const TEMPLATES = [
         place(T({ text: 'Design\nsom\nfungerar', fontFamily: 'Space Grotesk', fontWeight: 700, fontSize: 380, width: 2100, align: 'left', lineHeight: 0.95, fill: solid('#f5f5f0') }), 1240, 900),
         place(T({ text: 'FÖRELÄSNING', fontFamily: 'Space Grotesk', fontWeight: 700, fontSize: 80, width: 2100, align: 'left', letterSpacing: 300, fill: solid('#e63946') }), 1240, 2150),
         place(T({ text: 'Maria Holm om enkelhet,\nform och funktion', fontFamily: 'Space Grotesk', fontWeight: 500, fontSize: 130, width: 2100, align: 'left', lineHeight: 1.15, fill: solid('#111111') }), 1240, 2500),
-        place(T({ text: 'Tor 9 okt · 18.00\nStadsbiblioteket, Malmö\nFri entré', fontFamily: 'Space Grotesk', fontWeight: 400, fontSize: 80, width: 2100, align: 'left', lineHeight: 1.4, fill: solid('#111111') }), 1240, 3060),
+        place(T({ text: 'Tor 9 okt · 18.00\nStadsbiblioteket, Malmö\nFri entré', runs: [{ n: 17, weight: 700 }, { n: 25 }, { n: 9, color: '#e63946', weight: 700 }], fontFamily: 'Space Grotesk', fontWeight: 400, fontSize: 80, width: 2100, align: 'left', lineHeight: 1.4, fill: solid('#111111') }), 1240, 3060),
       );
       return d;
     },
@@ -401,6 +406,109 @@ export const TEMPLATES = [
         line(1240, 3060, 1840, '#e7d9b8', 4),
         line(1240, 3180, 1840, '#e7d9b8', 4),
         line(1240, 3300, 1840, '#e7d9b8', 4),
+      );
+      return d;
+    },
+  },
+  {
+    name: 'Fotokollage', cat: 'Sociala medier', fmt: 'Instagram 1080×1080', short: 'Foto', thumb: '#fdf6ec', tstyle: { color: '#c2410c', fontFamily: 'Georgia, serif' },
+    build() {
+      const d = newDoc(1080, 1080, 72);
+      d.background.fill = solid('#fdf6ec');
+      const r = { maskShape: 'rounded', radius: 24 };
+      d.elements.push(
+        F(350, 420, 620, 760, r),
+        F(860, 225, 360, 370, r),
+        F(860, 615, 360, 370, r),
+        place(T({ text: 'Sommaren 2026', fontFamily: 'Playfair Display', fontWeight: 700, fontSize: 84, width: 760, align: 'left', fill: solid('#2b2118') }), 420, 890),
+        place(T({ text: 'Släpp dina bilder på ramarna', fontFamily: 'Poppins', fontWeight: 400, fontSize: 34, width: 760, align: 'left', fill: solid('#8a7968') }), 420, 975),
+        I('camera', 975, 925, 96, '#c2410c'),
+      );
+      return d;
+    },
+  },
+  {
+    name: 'Tackkort', cat: 'Inbjudningar & kort', fmt: 'A5', short: 'Tack!', thumb: '#fbeee6', tstyle: { color: '#be123c', fontFamily: 'cursive', fontSize: '22px' },
+    build() {
+      const d = newDoc(1748, 2480, 300);
+      d.background.fill = solid('#fbeee6');
+      // Polaroid: vitt kort med en kvadratisk fotoram, som en grupp
+      const card = Object.assign(S('rect', { name: 'Polaroid', fill: solid('#ffffff'), stroke: { enabled: false, color: '#000000', width: 0, dash: 'solid' }, shadow: { enabled: true, color: '#00000038', blur: 50, x: 0, y: 20 } }), { x: 0, y: 0, w: 1000, h: 1180 });
+      const photo = Object.assign(createImage(null, 880, 880, { name: 'Ram', frame: true }), { x: 60, y: 60 });
+      const polaroid = Object.assign(createGroup([card, photo]), { name: 'Polaroid', x: 374, y: 300, w: 1000, h: 1180, rotation: -4 });
+      d.elements.push(
+        polaroid,
+        I('heart', 250, 1500, 130, '#fb7185', { rotation: -16 }),
+        I('heart', 1510, 420, 100, '#fda4af', { rotation: 14 }),
+        I('sparkles', 1480, 1560, 120, '#f59e0b'),
+        place(T({ text: 'Tack!', fontFamily: 'Pacifico', fontWeight: 400, fontSize: 300, width: 1500, fill: solid('#be123c') }), 874, 1830),
+        place(T({ text: 'för att du kom och firade med oss', fontFamily: 'Caveat', fontWeight: 600, fontSize: 104, width: 1500, fill: solid('#57534e') }), 874, 2110),
+      );
+      return d;
+    },
+  },
+  {
+    name: 'Vernissage', cat: 'Affischer', fmt: 'A4', short: 'Konst', thumb: 'linear-gradient(180deg,#d6d3d1 43%,#f7f3ee 43%)', tstyle: { color: '#1f2937', fontFamily: 'Georgia, serif' },
+    build() {
+      const d = newDoc(2480, 3508, 300);
+      d.background.fill = solid('#f7f3ee');
+      const info = (icon, text, y) => [
+        I(icon, 250, y, 96, '#b45309'),
+        place(T({ text, fontFamily: 'Poppins', fontWeight: 500, fontSize: 70, width: 1300, align: 'left', fill: solid('#1f2937') }), 1000, y),
+      ];
+      d.elements.push(
+        F(1240, 750, 2480, 1500),
+        place(T({ text: 'VERNISSAGE', fontFamily: 'Montserrat', fontWeight: 700, fontSize: 70, width: 2000, align: 'left', letterSpacing: 400, fill: solid('#b45309') }), 1200, 1730),
+        place(T({ text: 'Ljus över\nfjärden', fontFamily: 'DM Serif Display', fontWeight: 400, fontSize: 330, width: 2000, align: 'left', lineHeight: 1.0, fill: solid('#1f2937') }), 1200, 2140),
+        ...info('calendar', 'Lördag 17 maj', 2700),
+        ...info('clock', 'Kl. 14–18', 2870),
+        ...info('map-pin', 'Galleri Norr, Sundsvall', 3040),
+        Q('https://exempel.se/vernissage', 2030, 2840, 440, { color: '#1f2937', background: { enabled: false, color: '#ffffff' } }),
+        place(T({ text: 'Skanna för mer info', fontFamily: 'Poppins', fontWeight: 500, fontSize: 44, width: 600, fill: solid('#6b7280') }), 2030, 3130),
+      );
+      return d;
+    },
+  },
+  {
+    name: 'Visitkort', cat: 'Jobb & företag', fmt: '85×55 mm', short: 'Kort', thumb: 'linear-gradient(90deg,#0f172a 34%,#ffffff 34%)', tstyle: { color: '#0ea5e9' },
+    build() {
+      const d = newDoc(1004, 650, 300);
+      d.background.fill = solid('#ffffff');
+      const row = (icon, text, y) => [
+        I(icon, 420, y, 40, '#0f172a'),
+        place(T({ text, fontFamily: 'Poppins', fontWeight: 400, fontSize: 30, width: 500, align: 'left', fill: solid('#334155') }), 720, y),
+      ];
+      d.elements.push(
+        placeShape(S('rect', { fill: solid('#0f172a') }), 170, 325, 340, 650),
+        Q('https://exempel.se', 170, 290, 220, { color: '#ffffff', background: { enabled: false, color: '#0f172a' } }),
+        place(T({ text: 'SKANNA MIG', fontFamily: 'Montserrat', fontWeight: 700, fontSize: 22, width: 300, letterSpacing: 250, fill: solid('#94a3b8') }), 170, 450),
+        place(T({ text: 'Anna Lindberg', fontFamily: 'Playfair Display', fontWeight: 700, fontSize: 64, width: 580, align: 'left', fill: solid('#0f172a') }), 690, 140),
+        place(T({ text: 'Grafisk formgivare', fontFamily: 'Montserrat', fontWeight: 600, fontSize: 26, width: 580, align: 'left', letterSpacing: 150, uppercase: true, fill: solid('#0ea5e9') }), 690, 210),
+        placeShape(S('rect', { fill: solid('#0ea5e9') }), 450, 270, 100, 6),
+        ...row('phone', '070-123 45 67', 360),
+        ...row('mail', 'anna@exempel.se', 440),
+        ...row('globe', 'exempel.se', 520),
+      );
+      return d;
+    },
+  },
+  {
+    name: 'Wifi-skylt', cat: 'Jobb & företag', fmt: 'A5', short: 'Wifi', thumb: 'linear-gradient(160deg,#eff6ff,#bfdbfe)', tstyle: { color: '#2563eb', fontWeight: 700 },
+    build() {
+      const d = newDoc(1748, 2480, 300);
+      d.background.fill = lin(160, '#eff6ff', '#bfdbfe');
+      const pair = (label, value, x) => [
+        place(T({ text: label, fontFamily: 'Montserrat', fontWeight: 700, fontSize: 40, width: 600, letterSpacing: 300, fill: solid('#2563eb') }), x, 1930),
+        place(T({ text: value, fontFamily: 'Poppins', fontWeight: 600, fontSize: 72, width: 640, fill: solid('#0f172a') }), x, 2030),
+      ];
+      d.elements.push(
+        placeShape(S('rounded', { radius: 80, fill: solid('#ffffff'), shadow: { enabled: true, color: '#1e3a8a26', blur: 80, x: 0, y: 30 } }), 874, 1240, 1440, 2100),
+        I('wifi', 874, 500, 300, '#2563eb', { strokeWidth: 1.75 }),
+        place(T({ text: 'Gratis wifi', fontFamily: 'Poppins', fontWeight: 700, fontSize: 170, width: 1300, fill: solid('#0f172a') }), 874, 800),
+        place(T({ text: 'Skanna koden för att ansluta', fontFamily: 'Poppins', fontWeight: 400, fontSize: 60, width: 1300, fill: solid('#475569') }), 874, 970),
+        Q('WIFI:T:WPA;S:Gastnat;P:valkommen123;;', 874, 1420, 620, { color: '#0f172a' }),
+        ...pair('NÄTVERK', 'Gastnat', 554),
+        ...pair('LÖSENORD', 'valkommen123', 1194),
       );
       return d;
     },

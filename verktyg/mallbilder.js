@@ -41,7 +41,8 @@ for (const [i, t] of TEMPLATES.entries()) {
   await loadFonts(t.build().elements);
   const doc = t.build();
   relayoutAllText(doc.elements);
-  const canvas = renderToCanvas(doc, MAX_SIDA / Math.max(doc.width, doc.height));
+  // Tomma fotoramar visas med sin platshållare, som i editorn
+  const canvas = renderToCanvas(doc, MAX_SIDA / Math.max(doc.width, doc.height), { placeholders: true });
   const blob = await canvasToBlob(canvas, 'image/webp', 0.86);
   const namn = `${templateSlug(t)}.webp`;
   const svar = await fetch(`/spara/${namn}`, { method: 'PUT', body: blob });

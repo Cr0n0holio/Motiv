@@ -7,7 +7,8 @@ import { openFontPicker } from './fontpicker.js';
 import { ensureTextFont, weightsFor } from './fonts.js';
 import { BLEND_MODES } from './render.js';
 import * as A from './actions.js';
-import { startCrop, finishCrop, startTextEdit } from './editor.js';
+import { startCrop, finishCrop, startTextEdit, textRange, styleRange, rangeStyle, focusTextEdit } from './editor.js';
+import { clearRunProp } from './richtext.js';
 import { FILTER_PRESETS, getProcessed, ensureImage } from './images.js';
 import { MASK_SHAPES, maskD, isOpenShape } from './shapes.js';
 import { openBgRemoval, restoreBackground } from './bgremoval.js';
@@ -30,6 +31,7 @@ export function initProperties(el) {
   on('pages', () => { if (!state.selection.length) rebuild(); });
   on('doc', () => { if (structureChanged()) rebuild(); else B.refresh(); });
   on('doc:live', () => B.refresh());
+  on('textsel', () => B.refresh());
   on('fonts', () => B.refresh());
   rebuild();
 }
@@ -323,36 +325,52 @@ function textPanel(el) {
   const weightSel = h('select', { class: 'select' });
   const fillWeights = () => {
     const ws = weightsFor(first()?.fontFamily);
-    const cur = first()?.fontWeight || 400;
+    const cur = curWeight();
     const all = [...new Set([...ws, cur])].sort((a, b) => a - b);
     weightSel.innerHTML = '';
     all.forEach((w) => weightSel.append(h('option', { value: w }, `${WEIGHT_NAMES[w] || w}`)));
     weightSel.value = cur;
   };
-  weightSel.addEventListener('change', () => { apply((e) => { e.fontWeight = +weightSel.value; }, true); selected().forEach((e) => ensureTextFont(e)); });
+  weightSel.addEventListener('change', () => { const w = +weightSel.value; setRun('weight', w, true, (e) => { e.fontWeight = w; }); loadFonts(); });
   B.add(() => { if (document.activeElement !== weightSel) fillWeights(); });
 
   const setT = (fn, f) => apply(fn, f);
+  // Formatering som kan gälla en del av texten: är en del markerad under
+  // redigeringen ändras bara den, annars hela rutan (och delarnas egna värden
+  // för samma egenskap nollställs).
+  const setRun = (key, value, f, whole) => {
+    if (styleRange({ [key]: value })) { apply(() => {}, f); focusTextEdit(); } else apply((e) => { whole(e); clearRunProp(e, key); }, f);
+  };
+  const loadFonts = () => selected().forEach((e) => ensureTextFont(e).then(() => { apply(() => {}, false); }));
+  const curWeight = () => rangeStyle('weight') ?? (first()?.fontWeight || 400);
 
   return h('div', null,
     section('Text',
       fontBtn,
       h('div', { class: 'grid2' },
-        numField(B, { label: 'Storlek', min: 1, max: 5000, get: () => first()?.fontSize, set: (v, f) => setT((e) => { e.fontSize = v; }, f) }),
+        numField(B, { label: 'Storlek', min: 1, max: 5000, get: () => round(first()?.fontSize * (rangeStyle('size') ?? 1), 1), set: (v, f) => { if (textRange()) setRun('size', v / first().fontSize, f); else setT((e) => { e.fontSize = v; }, f); } }),
         weightSel,
       ),
       h('div', { class: 'row tight' },
-        toggleBtn(B, { iconName: 'bold', title: 'Fet (Ctrl+B)', get: () => (first()?.fontWeight || 400) >= 600, set: (v) => { setT((e) => { e.fontWeight = v ? 700 : 400; }, true); selected().forEach((e) => ensureTextFont(e)); } }),
-        toggleBtn(B, { iconName: 'italic', title: 'Kursiv (Ctrl+I)', get: () => first()?.italic, set: (v) => { setT((e) => { e.italic = v; }, true); selected().forEach((e) => ensureTextFont(e)); } }),
-        toggleBtn(B, { iconName: 'underline', title: 'Understruken (Ctrl+U)', get: () => first()?.underline, set: (v) => setT((e) => { e.underline = v; }, true) }),
+        toggleBtn(B, { iconName: 'bold', title: 'Fet (Ctrl+B)', get: () => curWeight() >= 600, set: (v) => { setRun('weight', v ? 700 : 400, true, (e) => { e.fontWeight = v ? 700 : 400; }); loadFonts(); } }),
+        toggleBtn(B, { iconName: 'italic', title: 'Kursiv (Ctrl+I)', get: () => rangeStyle('italic') ?? first()?.italic, set: (v) => { setRun('italic', v, true, (e) => { e.italic = v; }); loadFonts(); } }),
+        toggleBtn(B, { iconName: 'underline', title: 'Understruken (Ctrl+U)', get: () => rangeStyle('underline') ?? first()?.underline, set: (v) => setRun('underline', v, true, (e) => { e.underline = v; }) }),
         toggleBtn(B, { iconName: 'caps', title: 'Versaler', get: () => first()?.uppercase, set: (v) => setT((e) => { e.uppercase = v; }, true) }),
         h('span', { class: 'spacer' }),
         segmented(B, { options: [['left', 'textLeft', 'Vänster'], ['center', 'textCenter', 'Centrerad'], ['right', 'textRight', 'Höger']], get: () => first()?.align, set: (v) => setT((e) => { e.align = v; }, true) }),
       ),
       slider(B, { label: 'Radavstånd', min: 0.5, max: 3, step: 0.05, decimals: 2, get: () => first()?.lineHeight, set: (v, f) => setT((e) => { e.lineHeight = v; }, f) }),
       slider(B, { label: 'Teckenavstånd', min: -200, max: 1000, step: 5, get: () => first()?.letterSpacing || 0, set: (v, f) => setT((e) => { e.letterSpacing = v; }, f) }),
-      row(colorBtn(B, { label: 'Färg', allowGradient: true, allowNone: true, get: () => first()?.fill, set: (v, f) => setT((e) => { e.fill = deepClone(v); }, f) })),
+      row(colorBtn(B, {
+        label: 'Färg', allowGradient: true, allowNone: true,
+        get: () => { const c = rangeStyle('color'); return c ? { type: 'solid', color: c } : first()?.fill; },
+        // En markerad del kan få en egen enfärgad färg; gradient och "ingen" gäller hela rutan
+        set: (v, f) => { if (v.type === 'solid' && textRange()) setRun('color', v.color, f); else setT((e) => { e.fill = deepClone(v); clearRunProp(e, 'color'); }, f); },
+      })),
+      h('div', { class: 'row tight' }, h('span', { class: 'sub-label' }, 'Lista'), h('span', { class: 'spacer' }),
+        segmented(B, { options: [['none', 'Ingen'], ['bullet', '• Punkter'], ['number', '1. Nummer']], get: () => first()?.list || 'none', set: (v) => setT((e) => { if (v === 'none') delete e.list; else e.list = v; }, true) })),
       h('button', { class: 'btn full ghost', onclick: () => startTextEdit(first(), true) }, 'Redigera text (Enter)'),
+      h('div', { class: 'sub-label' }, 'Markera en del av texten medan du redigerar för att ge just den delen egen färg, storlek eller stil.'),
     ),
     section('Böj text',
       segmented(B, { cls: 'wide', options: [['none', 'Ingen'], ['arc', 'Båge'], ['wave', 'Våg']], get: () => first()?.curve?.mode || 'none', set: (v) => setT((e) => { e.curve = { ...(e.curve || { amount: 50 }), mode: v }; }, true) }),

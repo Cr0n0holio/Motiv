@@ -139,7 +139,10 @@ export async function ensureFamily(family) {
 /** Ser till att fonten för ett textelement är laddad i rätt vikt. */
 export async function ensureTextFont(el) {
   await ensureFamily(el.fontFamily);
-  try { await document.fonts.load(`${el.italic ? 'italic ' : ''}${el.fontWeight} ${Math.min(el.fontSize, 200)}px "${el.fontFamily}"`); } catch { /* ignore */ }
+  // Även vikter och kursiv som bara används i delar av texten
+  const styles = new Set([`${el.italic ? 'italic ' : ''}${el.fontWeight}`]);
+  for (const r of el.runs || []) styles.add(`${(r.italic ?? el.italic) ? 'italic ' : ''}${r.weight ?? el.fontWeight}`);
+  await Promise.all([...styles].map((st) => document.fonts.load(`${st} ${Math.min(el.fontSize, 200)}px "${el.fontFamily}"`).catch(() => { /* ignore */ })));
 }
 
 export async function ensureDocFonts(els) {

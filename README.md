@@ -33,6 +33,9 @@ Skriptet installerar systempaket, Rust och Tauri CLI vid behov och lägger
 **Text**
 - Redigera direkt på sidan (dubbelklick eller Enter) med riktig textmarkör,
   markering, IME och ångra
+- **Rik text**: markera en del av texten och ge den egen färg, storlek, vikt,
+  kursiv eller understrykning (panelen eller Ctrl+B/I/U)
+- **Punktlistor och numrerade listor** med hängande indrag
 - Fonter: alla systemfonter, ca 100 utvalda Google Fonts som laddas ned vid
   första användning och sedan fungerar offline, samt egna TTF/OTF-filer
 - Kontur, ihålig text, skugga, glöd/neon, textplatta, gradientfyllning
@@ -68,7 +71,7 @@ Skriptet installerar systempaket, Rust och Tauri CLI vid behov och lägger
   i px/mm/cm/tum med valfri dpi
 - **Flera sidor** per design: sidremsa med förhandsbilder, lägg till, duplicera,
   ta bort och dra för att ändra ordning; samma bakgrund på alla sidor med ett klick
-- 21 startmallar i fem kategorier, som kan ersätta designen eller läggas till som ny sida
+- 26 startmallar i fem kategorier, som kan ersätta designen eller läggas till som ny sida
 
 **Export**
 - PNG, JPG och WebP (0,5×–4×, genomskinlig bakgrund), en sida eller en fil per sida
@@ -89,7 +92,7 @@ Skriptet installerar systempaket, Rust och Tauri CLI vid behov och lägger
 | Ctrl+C / X / V / D | Kopiera / Klipp ut / Klistra in / Duplicera |
 | Ctrl+G / Ctrl+Shift+G | Gruppera / Dela upp |
 | Ctrl+] / Ctrl+[ | Framåt / Bakåt (med Shift: längst fram/bak) |
-| Ctrl+B / I / U | Fet / Kursiv / Understruken (text) |
+| Ctrl+B / I / U | Fet / Kursiv / Understruken (hela texten eller den markerade delen) |
 | Ctrl+L | Lås/lås upp |
 | T / R / O / L | Ny text / rektangel / ellips / linje |
 | Pilar (Shift = 10×) | Flytta markerat |
@@ -113,7 +116,8 @@ ui/                    Gränssnittet (laddas direkt av Tauri, inget byggsteg)
     editor.js          Canvas: rendering, markering, transformering, text/krop
     state.js           Dokumentmodell, händelser, ångra/gör om
     render.js          Rendering (delas av editor och rasterexport)
-    text.js            Textlayout, böjd text, effekter
+    text.js            Textlayout, böjd text, effekter, markör och markering
+    richtext.js        Formatering av delar av en text (el.runs)
     svgexport.js       SVG (även underlag för PDF)
     images.js          Bildcache, filter, masker
     shapes.js          Formgeometri

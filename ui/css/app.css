@@ -252,6 +252,8 @@ kbd { font: 11px/1 var(--font); background: var(--panel-3); border: 1px solid va
 .text-editor::selection { background: rgba(139,92,246,.35); color: transparent; }
 .text-editor.visible-text { background: rgba(255,255,255,.88); border-radius: 4px; box-shadow: 0 0 0 2px var(--accent); }
 .text-editor.visible-text::selection { color: #111; }
+/* Rak text: rutan tar bara emot tangenter, markör och markering ritas på canvasen */
+.text-editor.hidden-text { opacity: 0; pointer-events: none; caret-color: transparent; }
 
 /* ---------- Popovers ---------- */
 .popover { position: fixed; z-index: 100; background: var(--panel); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: 0 20px 50px rgba(0,0,0,.55); padding: 12px; }

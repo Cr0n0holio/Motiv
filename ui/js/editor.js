@@ -3,7 +3,9 @@
 import { state, emit, on, commit, select, selected, getById, single, markDirty, pageView, groupMatrix, groupChain } from './state.js';
 import { rad, deg, rotatePt, clamp, deepClone } from './util.js';
 import { renderDoc, drawElement } from './render.js';
-import { layoutText, syncTextBox, isCurved, fontString, letterSpacingPx, textHitPad } from './text.js';
+import { layoutText, syncTextBox, isCurved, fontString, letterSpacingPx, textHitPad, caretRect, indexAtPoint, selectionRects, caretLineMove, caretLineEdge, wordRange } from './text.js';
+import { replaceText, setRange, clearRunProp, styleAt } from './richtext.js';
+import { ensureTextFont } from './fonts.js';
 import { aabb, unionBox, scaleProps, corners, duplicateSelection, enterGroup, exitGroup } from './actions.js';
 import { getImage, sourceSize, alphaAt } from './images.js';
 import { maskD } from './shapes.js';
@@ -17,6 +19,8 @@ let guides = [];
 let marquee = null;
 let spaceDown = false;
 let textarea = null;
+let caretOn = true, caretTimer = null; // blinkande textmarkör
+let panelDownAt = 0;                   // senaste klicket i egenskapspanelen under textredigering
 let liveInfo = null; // text vid storleksändring/rotation
 
 const ACCENT = '#8b5cf6';
@@ -35,6 +39,17 @@ export function initEditor(hostEl) {
   resize();
 
   canvas.addEventListener('pointerdown', onDown);
+  // Fokus stannar i textrutan medan man markerar text med musen
+  canvas.addEventListener('mousedown', (e) => { if (drag?.type === 'textsel') e.preventDefault(); });
+  document.addEventListener('pointerdown', (e) => {
+    if (!textarea) return;
+    const t = e.target;
+    if (inStylePanel(t)) panelDownAt = performance.now();
+    else if (t !== canvas && t !== textarea) finishTextEdit();
+  }, true);
+  document.addEventListener('selectionchange', () => {
+    if (textarea && document.activeElement === textarea) { showCaret(); emit('textsel'); requestRender(); }
+  });
   canvas.addEventListener('pointermove', onHover);
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', onUp);
@@ -50,7 +65,12 @@ export function initEditor(hostEl) {
   on('doc', requestRender);
   on('doc:live', requestRender);
   on('render', requestRender);
-  on('selection', () => { if (state.cropId && !state.selection.includes(state.cropId)) finishCrop(true); requestRender(); });
+  on('selection', () => {
+    if (state.cropId && !state.selection.includes(state.cropId)) finishCrop(true);
+    if (textarea && !state.selection.includes(state.editingTextId)) finishTextEdit();
+    requestRender();
+  });
+  on('doc:live', () => { if (textarea) positionTextarea(); });
   on('fonts', () => { requestRender(); if (textarea) positionTextarea(); });
   on('image-loaded', requestRender);
   on('group', requestRender);
@@ -264,6 +284,130 @@ function frameCornersScreen(f, pad = 0) {
   });
 }
 
+// ---------- Textredigering: egen markör och markering ----------
+// Textrutan (textarea) tar emot tangenttryckningar men syns inte för rak
+// text; markören och markeringen ritas här utifrån textlayouten, så att de
+// stämmer även när delar av texten har olika storlek och vikt.
+
+/** Punkt i textelementets lokala koordinater → skärmen. */
+function textLocalToScreen(el, lx, ly) {
+  const c = docToScreen(el.x + el.w / 2, el.y + el.h / 2);
+  const p = rotatePt((lx - el.w / 2) * state.zoom, (ly - el.h / 2) * state.zoom, textScreenRot(el));
+  return { x: c.x + p.x, y: c.y + p.y };
+}
+function screenToTextLocal(el, s) {
+  const c = docToScreen(el.x + el.w / 2, el.y + el.h / 2);
+  const p = rotatePt((s.x - c.x) / state.zoom, (s.y - c.y) / state.zoom, -textScreenRot(el));
+  return { x: p.x + el.w / 2, y: p.y + el.h / 2 };
+}
+/** Textelementet som redigeras om skärmpunkten ligger på det (rak text). */
+function editingTextAt(s) {
+  const el = getById(state.editingTextId);
+  if (!el || !textarea || isCurved(el)) return null;
+  const p = screenToTextLocal(el, s), pad = 10 / state.zoom;
+  return p.x >= -pad && p.y >= -pad && p.x <= el.w + pad && p.y <= el.h + pad ? { el, p } : null;
+}
+const inStylePanel = (t) => !!t?.closest?.('#rightpanel, .popover');
+const selAnchor = () => (textarea.selectionDirection === 'backward' ? textarea.selectionEnd : textarea.selectionStart);
+const selFocus = () => (textarea.selectionDirection === 'backward' ? textarea.selectionStart : textarea.selectionEnd);
+
+function showCaret() {
+  caretOn = true;
+  clearInterval(caretTimer);
+  caretTimer = setInterval(() => { caretOn = !caretOn; requestRender(); }, 530);
+}
+function setTextSel(anchor, focus) {
+  textarea.setSelectionRange(Math.min(anchor, focus), Math.max(anchor, focus), focus < anchor ? 'backward' : 'forward');
+  showCaret();
+  emit('textsel');
+  requestRender();
+}
+
+function drawTextEditOverlay() {
+  const el = getById(state.editingTextId);
+  if (!el) return;
+  const P = (x, y) => textLocalToScreen(el, x, y);
+  const quad = (x, y, w, hh) => [P(x, y), P(x + w, y), P(x + w, y + hh), P(x, y + hh)];
+  strokePoly(quad(0, 0, el.w, el.h), ACCENT, 1.5);
+  if (isCurved(el)) return;
+  const a = textarea.selectionStart, b = textarea.selectionEnd;
+  ctx.save();
+  ctx.fillStyle = 'rgba(139,92,246,0.32)';
+  for (const r of selectionRects(el, a, b)) {
+    ctx.beginPath();
+    quad(r.x, r.y, r.w, r.h).forEach((pt, i) => (i ? ctx.lineTo(pt.x, pt.y) : ctx.moveTo(pt.x, pt.y)));
+    ctx.fill();
+  }
+  if (a === b && caretOn) {
+    const c = caretRect(el, a);
+    const p1 = P(c.x, c.y), p2 = P(c.x, c.y + c.h);
+    // Ljus kant runt en mörk linje syns mot alla bakgrunder
+    for (const [color, width] of [['rgba(255,255,255,0.85)', 3.5], ['#16161d', 1.5]]) {
+      ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+      ctx.strokeStyle = color; ctx.lineWidth = width; ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+/** Klick i texten som redigeras: sätter markören eller börjar en markering. */
+function textEditDown(e, s) {
+  const hit = editingTextAt(s);
+  if (!hit) return false;
+  e.preventDefault();
+  hideContextMenu();
+  const idx = indexAtPoint(hit.el, hit.p.x, hit.p.y);
+  const anchor = e.shiftKey ? selAnchor() : idx;
+  canvas.setPointerCapture(e.pointerId);
+  drag = { type: 'textsel', anchor, lastScreen: s };
+  textarea.focus({ preventScroll: true });
+  setTextSel(anchor, idx);
+  return true;
+}
+
+/** Markeringen i texten som redigeras, om den täcker en del av texten. */
+export function textRange() {
+  const el = getById(state.editingTextId);
+  if (!el || !textarea) return null;
+  const a = textarea.selectionStart, b = textarea.selectionEnd;
+  if (a === b || (a === 0 && b >= el.text.length)) return null;
+  return { el, a, b };
+}
+/** Formaterar den markerade delen av texten. false om ingen del är markerad (då gäller hela rutan). */
+export function styleRange(patch) {
+  const r = textRange();
+  if (!r) return false;
+  setRange(r.el, r.a, r.b, patch);
+  return true;
+}
+/** Den markerade delens egna värde för en formatering (undefined = som textrutan). */
+export function rangeStyle(key) {
+  const r = textRange();
+  return r ? styleAt(r.el, r.a)[key] : undefined;
+}
+/** Ger tillbaka fokus till texten efter ett klick i egenskapspanelen. */
+export function focusTextEdit() {
+  // Fördröjt: tangenten som bekräftade ett fält (Enter) får inte hamna i texten
+  setTimeout(() => {
+    if (textarea && !/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName || '')) textarea.focus({ preventScroll: true });
+  }, 0);
+}
+
+/** Ctrl+B/I/U i texten: markeringen om det finns en, annars hela rutan. */
+function toggleEditStyle(key) {
+  const el = getById(state.editingTextId);
+  if (!el) return;
+  const own = rangeStyle(key);
+  const val = key === 'weight' ? ((own ?? el.fontWeight ?? 400) >= 600 ? 400 : 700) : !(own ?? !!el[key]);
+  if (!styleRange({ [key]: val })) {
+    clearRunProp(el, key);
+    if (key === 'weight') el.fontWeight = val; else el[key] = val;
+  }
+  const relayout = () => { syncTextBox(el, isCurved(el) ? 'center' : 'top'); markDirty(); emit('doc:live'); requestRender(); };
+  relayout();
+  ensureTextFont(el).then(() => { if (state.editingTextId === el.id) relayout(); });
+}
+
 function strokePoly(pts, color, width = 1.5, dash = null) {
   ctx.save();
   ctx.beginPath();
@@ -320,6 +464,8 @@ function drawOverlay() {
   }
 
   if (state.cropId) { drawCropOverlay(); return; }
+
+  if (state.editingTextId && textarea) drawTextEditOverlay();
 
   const f = selectionFrame();
   if (f && !state.editingTextId) {
@@ -472,6 +618,7 @@ function onHover(e) {
   const f = selectionFrame();
   const hp = f && !state.editingTextId ? hitHandle(f, s.x, s.y) : null;
   if (hp) { canvas.style.cursor = cursorFor(hp, f.rot + scopeRot()); setHover(null); return; }
+  if (editingTextAt(s)) { canvas.style.cursor = 'text'; setHover(null); return; }
   const hit = hitTest(d.x, d.y);
   canvas.style.cursor = hit ? (hit.locked ? 'default' : 'move') : 'default';
   setHover(hit ? hit.id : null);
@@ -483,8 +630,9 @@ function snapshotSel() {
 }
 
 function onDown(e) {
-  canvas.focus({ preventScroll: true });
   const s = screenPt(e);
+  if (e.button === 0 && !spaceDown && textEditDown(e, s)) return;
+  canvas.focus({ preventScroll: true });
   let d = screenToDoc(s.x, s.y);
   hideContextMenu();
 
@@ -555,6 +703,11 @@ function onMove(e) {
   drag.lastScreen = s;
 
   switch (drag.type) {
+    case 'textsel': {
+      const el = getById(state.editingTextId);
+      if (el && textarea) { const p = screenToTextLocal(el, s); setTextSel(drag.anchor, indexAtPoint(el, p.x, p.y)); }
+      return;
+    }
     case 'pan':
       state._autoFit = false;
       state.panX = drag.px + (e.clientX - drag.sx);
@@ -589,6 +742,7 @@ function onUp() {
   drag = null;
   guides = [];
   liveInfo = null;
+  if (t === 'textsel') { textarea?.focus({ preventScroll: true }); return; }
   if (t === 'pan') canvas.style.cursor = spaceDown ? 'grab' : '';
   if (t === 'marquee') { marquee = null; emit('selection'); }
   if (moved) { commit(); emit('doc'); }
@@ -805,6 +959,8 @@ function resizeImageCrop(cur, el0, nw, nh, center, dx, dy) {
 // ---------- Dubbelklick ----------
 function onDblClick(e) {
   const s = screenPt(e);
+  const ed = editingTextAt(s);
+  if (ed) { setTextSel(...wordRange(ed.el, indexAtPoint(ed.el, ed.p.x, ed.p.y))); return; } // dubbelklick markerar ordet
   const d = screenToDoc(s.x, s.y);
   const hit = hitTest(d.x, d.y);
   if (!hit || hit.locked) return;
@@ -830,18 +986,36 @@ export function startTextEdit(el, selectAll = false) {
   textarea.addEventListener('input', () => {
     const cur = getById(state.editingTextId);
     if (!cur) return;
-    cur.text = textarea.value;
+    replaceText(cur, textarea.value, textarea.selectionEnd);
     syncTextBox(cur, isCurved(cur) ? 'center' : 'top');
     positionTextarea();
     markDirty();
     emit('doc:live');
+    showCaret();
     requestRender();
   });
   textarea.addEventListener('keydown', (ev) => {
     ev.stopPropagation();
-    if (ev.key === 'Escape' || (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey))) { ev.preventDefault(); finishTextEdit(); canvas.focus(); }
+    const ctrl = ev.ctrlKey || ev.metaKey;
+    if (ev.key === 'Escape' || (ev.key === 'Enter' && ctrl)) { ev.preventDefault(); finishTextEdit(); canvas.focus(); return; }
+    const styleKey = ctrl && !ev.altKey && !ev.shiftKey && { b: 'weight', i: 'italic', u: 'underline' }[ev.key.toLowerCase()];
+    if (styleKey) { ev.preventDefault(); toggleEditStyle(styleKey); return; }
+    // Rad upp/ned och radens början/slut följer den ritade texten, inte textrutans egen radbrytning
+    const cur = getById(state.editingTextId);
+    if (!cur || isCurved(cur) || ctrl || ev.altKey) return;
+    let to = null;
+    if (ev.key === 'ArrowUp' || ev.key === 'ArrowDown') to = caretLineMove(cur, selFocus(), ev.key === 'ArrowUp' ? -1 : 1);
+    else if (ev.key === 'Home' || ev.key === 'End') to = caretLineEdge(cur, selFocus(), ev.key === 'End');
+    if (to !== null) { ev.preventDefault(); setTextSel(ev.shiftKey ? selAnchor() : to, to); }
   });
-  textarea.addEventListener('blur', () => setTimeout(() => { if (textarea && document.activeElement !== textarea) finishTextEdit(); }, 0));
+  textarea.addEventListener('blur', () => setTimeout(() => {
+    if (!textarea || document.activeElement === textarea) return;
+    if (drag?.type === 'textsel') { textarea.focus({ preventScroll: true }); return; }
+    // Klick i egenskapspanelen formaterar markeringen – redigeringen fortsätter
+    if (performance.now() - panelDownAt < 600 || inStylePanel(document.activeElement)) return;
+    finishTextEdit();
+  }, 0));
+  showCaret();
   emit('textedit', true);
   requestRender();
 }
@@ -868,6 +1042,7 @@ export function positionTextarea() {
   st.top = `${c.y - (hh * z) / 2}px`;
   st.transform = `rotate(${textScreenRot(el)}deg)`;
   textarea.classList.toggle('visible-text', curved);
+  textarea.classList.toggle('hidden-text', !curved);
   if (curved) st.color = '#111'; else st.color = 'transparent';
   const fillColor = el.fill?.type === 'solid' ? el.fill.color : '#000';
   st.caretColor = fillColor.slice(0, 7);
@@ -879,6 +1054,7 @@ export function finishTextEdit() {
   const ta = textarea;
   textarea = null;
   state.editingTextId = null;
+  clearInterval(caretTimer);
   ta.remove();
   const el = getById(id);
   if (el && !el.text.trim()) {

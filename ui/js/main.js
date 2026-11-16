@@ -6,7 +6,7 @@ import { initPageBar, goToPage, addPage, duplicatePage, deletePage, pageCount, c
 import { h, blobToDataURL, debounce } from './util.js';
 import { isTauri, invoke, saveText, openText } from './bridge.js';
 import {
-  initEditor, requestRender, fitToScreen, zoomTo, zoomBy, startTextEdit, finishTextEdit, startCrop, finishCrop, isTyping,
+  initEditor, requestRender, fitToScreen, zoomTo, zoomBy, startTextEdit, finishTextEdit, focusTextEdit, startCrop, finishCrop, isTyping,
   setContextMenuHider, screenToDocFromClient, hitTest, getCanvas, exitGroupEditing, frameAt,
 } from './editor.js';
 import { initProperties, chooseImageFor } from './properties.js';
@@ -20,6 +20,7 @@ import { closeColorPicker } from './colorpicker.js';
 import { closeFontPicker } from './fontpicker.js';
 import { ensureAllImages, clearImageCaches } from './images.js';
 import * as A from './actions.js';
+import { clearRunProp } from './richtext.js';
 import { initUpdates, checkForUpdates } from './updates.js';
 
 const $ = (s) => document.querySelector(s);
@@ -355,6 +356,8 @@ function onKey(e) {
   if (isTyping(e)) return;
   const ctrl = e.ctrlKey || e.metaKey;
   const k = e.key;
+  // Text redigeras men fokus ligger i panelen: tangenterna hör till texten
+  if (state.editingTextId) { if (k === 'Escape') finishTextEdit(); else focusTextEdit(); return; }
   const lower = k.length === 1 ? k.toLowerCase() : k;
 
   if (state.cropId) {
@@ -404,8 +407,9 @@ function onKey(e) {
 function toggleTextProp(p) {
   const els = selected().filter((e) => e.type === 'text');
   if (!els.length) return;
-  if (p === 'bold') { const on = els[0].fontWeight < 600; els.forEach((e) => { e.fontWeight = on ? 700 : 400; }); }
-  else { const on = !els[0][p]; els.forEach((e) => { e[p] = on; }); }
+  // Gäller hela textrutan: egen formatering av delar av texten nollställs
+  if (p === 'bold') { const on = els[0].fontWeight < 600; els.forEach((e) => { e.fontWeight = on ? 700 : 400; clearRunProp(e, 'weight'); }); }
+  else { const on = !els[0][p]; els.forEach((e) => { e[p] = on; clearRunProp(e, p); }); }
   A.relayoutAllText();
   emit('doc');
   commit();

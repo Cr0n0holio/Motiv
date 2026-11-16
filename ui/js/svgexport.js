@@ -47,16 +47,29 @@ function textSVG(el, X) {
   const fontAttrs = `font-family="${escapeXml(famAttr(el.fontFamily))}" font-size="${R(el.fontSize)}" font-weight="${el.fontWeight || 400}"${el.italic ? ' font-style="italic"' : ''}`;
   const lsAttr = !L.curved && L.lsPx ? ` letter-spacing="${R(L.lsPx)}"` : '';
 
-  const glyphs = () => {
+  // Attribut för en del av texten som avviker från textrutans egen stil.
+  // font: canvas-fontsträng ("italic 700 48px …"); colored: ta med egen färg.
+  const own = (font, ls, color, colored) => {
+    let a = '';
+    if (font !== L.font) {
+      const m = /^(italic )?(\d+) ([\d.]+)px/.exec(font);
+      if (m) a += ` font-size="${R(+m[3])}" font-weight="${m[2]}" font-style="${m[1] ? 'italic' : 'normal'}"`;
+    }
+    if (ls !== null && Math.abs(ls - L.lsPx) > 1e-6) a += ` letter-spacing="${R(ls)}"`;
+    if (colored && color) a += ` ${svgColorAttrs(color, 'fill')}`;
+    return a;
+  };
+  const glyphs = (colored = false) => {
     if (!L.curved) {
-      return L.lines.filter((l) => l.text).map((l) => `<text x="${R(l.x)}" y="${R(l.baseline)}" xml:space="preserve">${escapeXml(l.text)}</text>`).join('');
+      return L.lines.map((l) => (l.marker ? `<text x="${R(l.marker.x)}" y="${R(l.baseline)}"${own(l.marker.font, 0, l.marker.color, colored)}>${escapeXml(l.marker.text)}</text>` : '')
+        + l.segs.filter((sg) => sg.text).map((sg) => `<text x="${R(sg.x)}" y="${R(l.baseline)}" xml:space="preserve"${own(sg.font, sg.ls, sg.color, colored)}>${escapeXml(sg.text)}</text>`).join('')).join('');
     }
     // Böjd text: varje bokstav placeras med x/y + rotate i stället för transform,
     // så att en gradientfyllning ligger still över hela texten.
     return L.glyphs.filter((g) => g.ch.trim()).map((g) => {
       const deg = (g.rot * 180) / Math.PI;
       const o = rotatePt(-g.w / 2, 0, deg);
-      return `<text x="${R(g.x + o.x)}" y="${R(g.y + o.y)}" rotate="${R(deg)}">${escapeXml(g.ch)}</text>`;
+      return `<text x="${R(g.x + o.x)}" y="${R(g.y + o.y)}" rotate="${R(deg)}"${own(g.font, null, g.color, colored)}>${escapeXml(g.ch)}</text>`;
     }).join('');
   };
   const hasFill = paintIsVisible(el.fill);
@@ -92,10 +105,9 @@ function textSVG(el, X) {
   if (hasFill) {
     const p = svgPaint(el.fill, 0, 0, L.w, L.h, X.ids);
     if (p.def) X.defs.push(p.def);
-    out += `<g ${p.attr}>${glyphs()}`;
-    if (el.underline && !L.curved) {
-      const th = Math.max(1, el.fontSize * 0.06);
-      out += L.lines.filter((l) => l.text).map((l) => `<rect x="${R(l.x)}" y="${R(l.baseline + el.fontSize * 0.1)}" width="${R(l.width)}" height="${R(th)}"/>`).join('');
+    out += `<g ${p.attr}>${glyphs(true)}`;
+    if (!L.curved) {
+      out += L.lines.map((l) => l.segs.filter((sg) => sg.underline && sg.text).map((sg) => `<rect x="${R(sg.x)}" y="${R(l.baseline + sg.size * 0.1)}" width="${R(sg.width)}" height="${R(Math.max(1, sg.size * 0.06))}"${sg.color ? ` ${svgColorAttrs(sg.color, 'fill')}` : ''}/>`).join('')).join('');
     }
     out += '</g>';
   }

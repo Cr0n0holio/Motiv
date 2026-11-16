@@ -5,7 +5,8 @@ import * as S from '../ui/js/state.js';
 import * as A from '../ui/js/actions.js';
 import * as P from '../ui/js/pages.js';
 import { renderToCanvas } from '../ui/js/render.js';
-import { layoutText, textPlateRect } from '../ui/js/text.js';
+import { layoutText, textPlateRect, syncTextBox, caretRect, indexAtPoint, selectionRects, caretLineMove, wordRange } from '../ui/js/text.js';
+import { getRuns, setRange, clearRunProp, replaceText, styleAt } from '../ui/js/richtext.js';
 import { buildSVG } from '../ui/js/svgexport.js';
 import { shrinkImage, alphaAt, ensureImage } from '../ui/js/images.js';
 import { TEMPLATES, templateSlug } from '../ui/js/templates.js';
@@ -272,9 +273,141 @@ test('QR-koder har giltig storlek, sökarmönster i hörnen och klarar å, ä, �
   eq(qrPath('x'.repeat(5000), 'H'), null, 'för lång text');
 });
 
+// ---------- Rik text och listor ----------
+test('formatering av en del av texten följer med när texten ändras', () => {
+  fresh();
+  const el = A.addText('heading', { text: 'Hej stora världen' });
+  setRange(el, 4, 9, { color: '#ff0000', weight: 400 });
+  eq(el.runs, [{ n: 4 }, { color: '#ff0000', weight: 400, n: 5 }, { n: 8 }]);
+  // Skriv i mitten av det formaterade ordet: den nya texten ärver formateringen
+  replaceText(el, 'Hej stoXXra världen', 9);
+  eq(el.runs.map((r) => r.n), [4, 7, 8]);
+  // Skriv före: formateringen flyttas
+  replaceText(el, 'Åh, Hej stoXXra världen', 4);
+  eq(styleAt(el, 8).color, '#ff0000');
+  eq(styleAt(el, 7).color, undefined);
+  // Ta bort hela det formaterade ordet
+  replaceText(el, 'Åh, Hej  världen', 8);
+  eq(el.runs, undefined, 'ingen formatering kvar:');
+  eq(getRuns(el), [{ n: el.text.length }]);
+});
+
+test('samma formatering slås ihop och kan nollställas', () => {
+  fresh();
+  const el = A.addText('heading', { text: 'abcdefgh' });
+  setRange(el, 0, 4, { italic: true });
+  setRange(el, 4, 8, { italic: true });
+  eq(el.runs, [{ italic: true, n: 8 }]);
+  setRange(el, 2, 6, { color: '#00ff00' });
+  eq(el.runs.length, 3);
+  clearRunProp(el, 'italic');
+  eq(el.runs, [{ n: 2 }, { color: '#00ff00', n: 4 }, { n: 2 }]);
+  setRange(el, 0, 8, { color: null });
+  eq(el.runs, undefined);
+  // Trasig data tål layouten: för många eller för få tecken
+  el.runs = [{ n: 3, size: 2 }, { n: 100, color: '#123456' }];
+  eq(getRuns(el).map((r) => r.n), [3, 5]);
+  el.runs = [{ n: 2, size: 2 }];
+  eq(getRuns(el).map((r) => r.n), [2, 6]);
+  ok(layoutText(el).lines.length >= 1);
+});
+
+test('rik text: större text ger högre rad och delarna ligger kant i kant', () => {
+  fresh();
+  const el = A.addText('heading', { text: 'liten STOR liten\nrad två', fontSize: 100, width: 5000, align: 'left', lineHeight: 1.2 });
+  const before = layoutText(el);
+  near(before.lines[0].height, 120);
+  setRange(el, 6, 10, { size: 2, weight: 400 });
+  syncTextBox(el, 'top');
+  const L = layoutText(el);
+  eq(L.lines[0].segs.map((s) => s.text), ['liten ', 'STOR', ' liten']);
+  near(L.lines[0].height, 240, 0.01, 'första radens höjd:');
+  near(L.lines[1].height, 120, 0.01, 'andra radens höjd:');
+  near(el.h, 360, 0.01, 'rutans höjd:');
+  const [a, b, c] = L.lines[0].segs;
+  ok(b.x > a.x && c.x > b.x + b.width - 1, 'delarna ligger i ordning');
+  near(L.lines[0].width, c.x + c.width - a.x, 0.5, 'radens bredd:');
+  // Ritningen ändras av färg på en del
+  el.x = 20; el.y = 20;
+  const p0 = snapshotPixels();
+  setRange(el, 0, 5, { color: '#ff0000' });
+  ok(pixelDiff(p0, snapshotPixels()) > 20, 'färgad del syns i ritningen');
+});
+
+test('markör och markering följer textlayouten', () => {
+  fresh();
+  const el = A.addText('heading', { text: 'ett två tre\nfyra fem', fontSize: 100, width: 5000, align: 'left' });
+  setRange(el, 4, 7, { size: 2 });
+  syncTextBox(el, 'top');
+  const L = layoutText(el);
+  eq(caretRect(el, 0).x, L.lines[0].x);
+  near(caretRect(el, 11).x, L.lines[0].x + L.lines[0].width, 0.5, 'radens slut:');
+  ok(caretRect(el, 12).y >= L.lines[1].top, 'position 12 står på andra raden');
+  // Klick mitt i ett tecken hamnar på närmaste teckengräns
+  for (const i of [0, 3, 5, 8, 11, 14, 20]) {
+    const c = caretRect(el, i);
+    eq(indexAtPoint(el, c.x + 0.5, c.y + c.h / 2), i, `klick vid position ${i}:`);
+  }
+  eq(indexAtPoint(el, -50, 10), 0);
+  eq(indexAtPoint(el, 99999, 99999), el.text.length);
+  eq(selectionRects(el, 2, 15).length, 2, 'markering över två rader:');
+  eq(selectionRects(el, 5, 5), []);
+  eq(caretLineMove(el, 0, 1), 12, 'rad ned från början:');
+  eq(caretLineMove(el, 14, -1) <= 11, true);
+  eq(caretLineMove(el, 3, -1), 0, 'rad upp från första raden:');
+  eq(wordRange(el, 5), [4, 7]);
+});
+
+test('listor: punkter och nummer får indrag och hoppar över tomma rader', () => {
+  fresh();
+  const el = A.addText('body', { text: 'första\n\nandra som är lång nog att brytas på flera rader i rutan\ntredje', fontSize: 60, width: 700, align: 'left' });
+  const plainX = layoutText(el).lines[0].x;
+  el.list = 'bullet';
+  syncTextBox(el, 'top');
+  let L = layoutText(el);
+  ok(L.lines[0].x > plainX + 20, 'texten är indragen');
+  eq(L.lines.filter((l) => l.marker).map((l) => l.marker.text), ['•', '•', '•']);
+  ok(L.lines.every((l) => l.x === L.lines[0].x), 'fortsättningsrader har samma indrag');
+  ok(L.lines[0].marker.x >= 0 && L.lines[0].marker.x < L.lines[0].x, 'punkten står i indraget');
+  ok(L.lines.every((l) => l.x + l.width <= 700.5), 'texten håller sig i rutan');
+  el.list = 'number';
+  L = layoutText(el);
+  eq(L.lines.filter((l) => l.marker).map((l) => l.marker.text), ['1.', '2.', '3.']);
+  eq(L.lines[1].marker, null, 'tom rad har inget nummer:');
+});
+
+test('SVG-export: rik text och listor', async () => {
+  fresh();
+  const el = A.addText('heading', { text: 'Röd och stor\nrad två', fontSize: 100, width: 2000, align: 'left', underline: false });
+  setRange(el, 0, 3, { color: '#ff0000', underline: true });
+  setRange(el, 8, 12, { size: 1.5, italic: true, weight: 400 });
+  el.list = 'number';
+  syncTextBox(el, 'top');
+  const svg = await buildSVG(S.pageView(S.state.doc, 0), {});
+  const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
+  ok(!doc.querySelector('parsererror'), 'giltig SVG');
+  const texts = [...doc.querySelectorAll('text')];
+  eq(texts.map((t) => t.textContent), ['1.', 'Röd', ' och ', 'stor', '2.', 'rad två']);
+  eq(texts[1].getAttribute('fill'), 'rgb(255,0,0)');
+  eq(texts[3].getAttribute('font-size'), '150');
+  eq(texts[3].getAttribute('font-style'), 'italic');
+  eq(texts[3].getAttribute('font-weight'), '400');
+  eq(texts[2].getAttribute('font-size'), null, 'oformaterad del ärver:');
+  eq(doc.querySelectorAll('rect[fill="rgb(255,0,0)"]').length, 1, 'understrykning i delens färg:');
+});
+
+test('palettbyte når färger på delar av en text', () => {
+  fresh();
+  const el = A.addText('heading', { text: 'abc def' });
+  setRange(el, 0, 3, { color: '#ff0000' });
+  S.commit();
+  A.replaceColor('#ff0000', '#00ff00');
+  eq(el.runs[0].color, '#00ff00');
+});
+
 // ---------- Mallar ----------
 test('alla mallar byggs och har innehåll på sidan', () => {
-  ok(TEMPLATES.length >= 21, `bara ${TEMPLATES.length} mallar`);
+  ok(TEMPLATES.length >= 26, `bara ${TEMPLATES.length} mallar`);
   const slugs = new Set();
   for (const t of TEMPLATES) {
     const d = t.build();

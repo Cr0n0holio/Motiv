@@ -470,6 +470,7 @@ export function eachColor(el, fn, onlyEnabled = false) {
   };
   paint(el.fill);
   if (typeof el.color === 'string') fn(el, 'color'); // ikoner och QR-koder
+  if (el.type === 'text') el.runs?.forEach((r) => { if (r.color) fn(r, 'color'); }); // delar av texten med egen färg
   for (const k of ['stroke', 'shadow', 'glow', 'border', 'background']) if (el[k]?.color && (!onlyEnabled || el[k].enabled)) fn(el[k], 'color');
   if (el.type === 'group') el.children.forEach((c) => eachColor(c, fn, onlyEnabled));
 }
