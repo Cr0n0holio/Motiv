@@ -15,6 +15,8 @@ import { resizedView, renderExportCanvas } from '../ui/js/exporter.js';
 import { parseColor } from '../ui/js/util.js';
 import { ICON_LIST } from '../ui/js/icondata.js';
 import { qrPath } from '../ui/js/qr.js';
+import { parseDelimited, decodeText, parseXlsx } from '../ui/js/tabledata.js';
+import { pageFields, guessMapping, fillPage, placeholdersIn } from '../ui/js/bulk.js';
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -403,6 +405,152 @@ test('palettbyte når färger på delar av en text', () => {
   S.commit();
   A.replaceColor('#ff0000', '#00ff00');
   eq(el.runs[0].color, '#00ff00');
+});
+
+// ---------- Massproduktion ----------
+test('listor läses in: CSV, inklistrat från Excel och teckenkodning', () => {
+  eq(parseDelimited('Namn;Titel\nAnna;"Chef; vd"\n\nErik;"Säger ""hej"" då"\n'), [['Namn', 'Titel'], ['Anna', 'Chef; vd'], ['Erik', 'Säger "hej" då']]);
+  eq(parseDelimited('a,b,c\r\n1,2\r\n'), [['a', 'b', 'c'], ['1', '2', '']]);
+  eq(parseDelimited('﻿Namn\tOrt\nÅsa\tMalmö'), [['Namn', 'Ort'], ['Åsa', 'Malmö']]);
+  eq(parseDelimited('"två\nrader";x'), [['två\nrader', 'x']]);
+  eq(decodeText(new TextEncoder().encode('Åsa')), 'Åsa');
+  eq(decodeText(new Uint8Array([0xc5, 0x73, 0x61])), 'Åsa', 'Windows-1252:');
+});
+
+/** Bygger en liten .xlsx för testet; med deflate komprimeras filerna som i en riktig Excel-fil. */
+async function makeXlsx(files, deflate = false) {
+  const enc = new TextEncoder(), parts = [], central = [];
+  let offset = 0;
+  const u16 = (n) => [n & 255, n >> 8], u32 = (n) => [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255];
+  for (const [name, text] of Object.entries(files)) {
+    const n = enc.encode(name), plain = enc.encode(text);
+    const d = deflate ? new Uint8Array(await new Response(new Blob([plain]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer()) : plain;
+    const m = deflate ? 8 : 0;
+    const local = [...u32(0x04034b50), ...u16(20), ...u16(0), ...u16(m), ...u16(0), ...u16(0), ...u32(0), ...u32(d.length), ...u32(plain.length), ...u16(n.length), ...u16(0)];
+    parts.push(new Uint8Array(local), n, d);
+    central.push(new Uint8Array([...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0), ...u16(m), ...u16(0), ...u16(0), ...u32(0), ...u32(d.length), ...u32(plain.length), ...u16(n.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset)]), n);
+    offset += local.length + n.length + d.length;
+  }
+  const cdSize = central.reduce((a, b) => a + b.length, 0);
+  const end = new Uint8Array([...u32(0x06054b50), ...u16(0), ...u16(0), ...u16(central.length / 2), ...u16(central.length / 2), ...u32(cdSize), ...u32(offset), ...u16(0)]);
+  const all = [...parts, ...central, end];
+  const out = new Uint8Array(all.reduce((a, b) => a + b.length, 0));
+  let p = 0;
+  for (const a of all) { out.set(a, p); p += a.length; }
+  return out;
+}
+
+test('Excel-filer läses in: delade strängar, tal, datum och tomma celler', async () => {
+  const ns = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+  const files = {
+    'xl/workbook.xml': `<workbook ${ns}><sheets><sheet name="Gäster" sheetId="1" r:id="rId7"/></sheets></workbook>`,
+    'xl/_rels/workbook.xml.rels': '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId7" Target="worksheets/blad.xml"/></Relationships>',
+    'xl/sharedStrings.xml': `<sst ${ns}><si><t>Namn</t></si><si><t>Datum</t></si><si><r><t>Åsa </t></r><r><t>Öberg</t></r></si><si><t>Pris</t></si></sst>`,
+    'xl/styles.xml': `<styleSheet ${ns}><numFmts><numFmt numFmtId="164" formatCode="yyyy-mm-dd"/></numFmts><cellXfs><xf numFmtId="0"/><xf numFmtId="164"/><xf numFmtId="14"/></cellXfs></styleSheet>`,
+    'xl/worksheets/blad.xml': `<worksheet ${ns}><sheetData>`
+      + '<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="s"><v>3</v></c></row>'
+      + '<row r="2"><c r="A2" t="s"><v>2</v></c><c r="B2" s="1"><v>46159</v></c><c r="C2"><v>0.30000000000000004</v></c></row>'
+      + '<row r="4"><c r="A4" t="inlineStr"><is><t>Erik</t></is></c><c r="C4"><v>1250</v></c></row>'
+      + '</sheetData></worksheet>',
+  };
+  const want = [['Namn', 'Datum', 'Pris'], ['Åsa Öberg', '2026-05-17', '0.3'], ['Erik', '', '1250']];
+  eq(await parseXlsx(await makeXlsx(files)), want);
+  eq(await parseXlsx(await makeXlsx(files, true)), want, 'komprimerad fil:');
+});
+
+test('massproduktion: en sida per rad med platshållare, koppling och krympt text', () => {
+  fresh();
+  const name = A.addText('heading', { text: 'Namn', fontSize: 100, width: 1400 });
+  const hello = A.addText('body', { text: 'Hej {namn}, välkommen till {Ort}!', fontSize: 40, width: 900 });
+  setRange(hello, 4, 10, { color: '#ff0000' }); // {namn}
+  const qr = A.addQR('https://exempel.se/{Kod}');
+  const page = S.state.doc.pages[0];
+  const headers = ['Namn', 'Ort', 'Kod'];
+  eq(pageFields(page.elements).map((f) => f.type), ['text', 'text', 'qr']);
+  eq(guessMapping(page.elements, headers), { [name.id]: 0 });
+  eq(placeholdersIn(hello.text, headers), [0, 1]);
+  const lines0 = layoutText(name).lines.length;
+  const { page: p1, warnings } = fillPage(page, headers, ['Anna-Karin Gustafsson-Lindqvist', 'Umeå', 'A17'], { [name.id]: 0 });
+  const [n1, h1, q1] = p1.elements;
+  eq(n1.text, 'Anna-Karin Gustafsson-Lindqvist');
+  ok(n1.fontSize < 100, 'långt namn krymps');
+  eq(layoutText(n1).lines.length, lines0, 'och tar lika många rader som i mallen:');
+  eq(warnings, []);
+  eq(h1.text, 'Hej Anna-Karin Gustafsson-Lindqvist, välkommen till Umeå!');
+  eq(h1.runs.map((r) => [r.n, r.color]), [[4, undefined], [31, '#ff0000'], [h1.text.length - 35, undefined]], 'formateringen följer med platshållaren:');
+  eq(q1.text, 'https://exempel.se/A17');
+  ok(n1.id !== name.id && p1.id !== page.id, 'kopian får egna id:n');
+  eq(name.text, 'Namn', 'mallen är orörd:');
+  // Utan krympning varnas det i stället
+  const r2 = fillPage(page, headers, ['Anna-Karin Gustafsson-Lindqvist', 'Umeå', 'A17'], { [name.id]: 0 }, { shrink: false });
+  eq(r2.page.elements[0].fontSize, 100);
+  ok(r2.warnings.length >= 1, 'varning när texten tar fler rader');
+  // Sidorna läggs in som ett ångringssteg och ersätter mallsidan
+  S.commit();
+  P.insertPages(0, [p1, r2.page], { replace: true });
+  eq(S.state.doc.pages.length, 2);
+  S.undo();
+  eq(S.state.doc.pages.length, 1);
+  eq(S.state.doc.pages[0].elements[0].text, 'Namn');
+});
+
+// ---------- Kopiera stil ----------
+test('kopiera stil för över utseendet men inte innehåll, storlek eller position', () => {
+  fresh();
+  const a = A.addText('heading', { text: 'Källa', fontFamily: 'Georgia', fontSize: 90, italic: true, fill: { type: 'solid', color: '#ff0000' }, stroke: { enabled: true, color: '#00ff00', width: 5 } });
+  const b = A.addText('body', { text: 'Mål med egen text', width: 400 });
+  setRange(b, 0, 3, { color: '#0000ff' });
+  const pos = [b.x + b.w / 2, b.y + b.h / 2];
+  S.select([a.id]);
+  ok(A.copyStyle());
+  S.select([b.id]);
+  eq(A.pasteStyle(), 1);
+  eq([b.fontFamily, b.fontSize, b.italic, b.fill.color, b.stroke.color], ['Georgia', 90, true, '#ff0000', '#00ff00']);
+  eq(b.text, 'Mål med egen text');
+  eq(b.width, 400);
+  eq(b.runs, undefined, 'delarnas egen formatering nollställs:');
+  near(b.x + b.w / 2, pos[0], 0.5); near(b.y + b.h / 2, pos[1], 0.5);
+  // Text → form: fyllning och kantlinje förs över, formens streckning finns kvar
+  const sh = A.addShape('rect', { dash: 'dashed' });
+  S.select([sh.id]);
+  eq(A.pasteStyle(), 1);
+  eq([sh.fill.color, sh.stroke.color, sh.stroke.enabled, sh.stroke.dash], ['#ff0000', '#00ff00', true, 'dashed']);
+  ok(sh.fontFamily === undefined, 'formen får inga textegenskaper');
+  // Text → ikon har inget gemensamt utseende
+  const ic = A.addIcon(ICON_LIST[0]);
+  S.select([ic.id]);
+  eq(A.pasteStyle(), 0);
+  S.undo(); // ikonen
+  S.undo(); // inklistringen på formen
+  eq(S.getById(sh.id).stroke.color === '#00ff00', false, 'inklistringen går att ångra:');
+});
+
+// ---------- Hjälplinjer och marginal ----------
+test('hjälplinjer och marginal sparas, ångras och följer formatet men exporteras inte', async () => {
+  const d = fresh(1000, 2000);
+  eq(d.guides, { x: [], y: [] });
+  eq(d.margin, 0);
+  d.guides.x.push(250); d.guides.y.push(500); d.margin = 100;
+  S.commit();
+  const back = S.parseDoc(S.serializeDoc());
+  eq(back.guides, { x: [250], y: [500] });
+  eq(back.margin, 100);
+  // Äldre filer saknar fälten; trasiga värden rensas
+  const old = JSON.parse(S.serializeDoc());
+  delete old.doc.guides; old.doc.margin = 'x';
+  eq(S.parseDoc(JSON.stringify(old)).guides, { x: [], y: [] });
+  eq(S.parseDoc(JSON.stringify(old)).margin, 0);
+  // Inget av det syns i en export
+  const svg = await buildSVG(S.pageView(S.state.doc, 0), {});
+  ok(!/<line|stroke=/.test(svg), 'exporten innehåller inga linjer');
+  A.resizeDocument(2000, 2000, 72, false);
+  eq(S.state.doc.guides, { x: [500], y: [500] });
+  eq(S.state.doc.margin, 100);
+  S.undo();
+  eq(S.state.doc.guides, { x: [250], y: [500] });
+  S.undo();
+  eq(S.state.doc.guides, { x: [], y: [] });
+  eq(S.state.doc.margin, 0);
 });
 
 // ---------- Mallar ----------

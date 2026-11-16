@@ -384,6 +384,10 @@ export function resizeDocument(w, h, dpi, scaleContent) {
   const d = state.doc;
   w = Math.round(clamp(w, 16, 20000)); h = Math.round(clamp(h, 16, 20000));
   for (const p of d.pages) fitElements(p.elements, d.width, d.height, w, h, scaleContent);
+  // Hjälplinjer och marginal behåller sin plats i förhållande till sidan
+  const kx = w / d.width, ky = h / d.height;
+  d.guides = { x: (d.guides?.x || []).map((v) => v * kx), y: (d.guides?.y || []).map((v) => v * ky) };
+  d.margin = (d.margin || 0) * Math.min(kx, ky);
   d.width = w; d.height = h;
   if (dpi) d.dpi = dpi;
   emit('doc');
@@ -609,4 +613,62 @@ export function addIcon(def, { at = null } = {}) {
 export function addQR(text, { at = null } = {}) {
   const s = pageMin() * 0.3;
   return addElement(createQR(text, { w: s, h: s }), { at });
+}
+
+// ---------- Kopiera stil ----------
+// Utseendet förs över mellan element: font, färger, effekter och kantlinjer,
+// men inte innehåll, storlek eller position. Mellan olika typer förs det
+// över som båda har (t.ex. fyllning och skugga mellan text och form).
+const STYLE_KEYS = {
+  text: ['fontFamily', 'fontSize', 'fontWeight', 'italic', 'underline', 'uppercase', 'align', 'lineHeight', 'letterSpacing', 'fill', 'stroke', 'shadow', 'glow', 'background', 'opacity', 'blend'],
+  shape: ['fill', 'stroke', 'shadow', 'opacity', 'blend'],
+  image: ['filters', 'preset', 'border', 'shadow', 'opacity', 'blend'],
+  icon: ['color', 'strokeWidth', 'opacity', 'blend'],
+  qr: ['color', 'background', 'opacity', 'blend'],
+  group: ['opacity', 'blend'],
+};
+const MERGED = new Set(['stroke', 'shadow', 'glow', 'background', 'border', 'filters']);
+
+/** Kopierar stilen från det markerade elementet. Returnerar false om inget passar. */
+export function copyStyle() {
+  const el = selected()[0];
+  if (!el || !STYLE_KEYS[el.type]) return false;
+  const style = {};
+  for (const k of STYLE_KEYS[el.type]) if (el[k] !== undefined) style[k] = deepClone(el[k]);
+  state.styleClip = { type: el.type, style };
+  emit('styleclip');
+  return true;
+}
+
+/** Klistrar in den kopierade stilen på de markerade elementen. Returnerar antalet ändrade. */
+export function pasteStyle() {
+  const clip = state.styleClip;
+  if (!clip) return 0;
+  let n = 0;
+  for (const el of selected()) {
+    if (el.locked) continue;
+    const keys = (STYLE_KEYS[el.type] || []).filter((k) => k in clip.style);
+    // Bara genomskinlighet gemensam (t.ex. text → bild) räknas inte som en stil
+    if (!keys.some((k) => k !== 'opacity' && k !== 'blend')) continue;
+    for (const k of keys) {
+      const v = deepClone(clip.style[k]);
+      // Delobjekt slås ihop så att målets egna fält (t.ex. streckad kantlinje) finns kvar
+      el[k] = MERGED.has(k) && el[k] && typeof el[k] === 'object' ? { ...el[k], ...v } : v;
+    }
+    if (el.type === 'text') {
+      // Hela rutan får den nya stilen, även delar som hade egen formatering
+      delete el.runs;
+      syncTextBox(el, 'center');
+      ensureTextFont(el).then(() => { syncTextBox(el, 'center'); emit('doc'); });
+    }
+    n++;
+  }
+  if (n) { emit('doc'); commit(); }
+  return n;
+}
+
+/** Penseln: kopierar stilen och låter nästa klick på ett element klistra in den. */
+export function setStylePainter(on) {
+  state.stylePainter = !!on && copyStyle();
+  emit('styleclip');
 }

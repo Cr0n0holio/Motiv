@@ -6,7 +6,7 @@ import { renderDoc, drawElement } from './render.js';
 import { layoutText, syncTextBox, isCurved, fontString, letterSpacingPx, textHitPad, caretRect, indexAtPoint, selectionRects, caretLineMove, caretLineEdge, wordRange } from './text.js';
 import { replaceText, setRange, clearRunProp, styleAt } from './richtext.js';
 import { ensureTextFont } from './fonts.js';
-import { aabb, unionBox, scaleProps, corners, duplicateSelection, enterGroup, exitGroup } from './actions.js';
+import { aabb, unionBox, scaleProps, corners, duplicateSelection, enterGroup, exitGroup, pasteStyle, setStylePainter } from './actions.js';
 import { getImage, sourceSize, alphaAt } from './images.js';
 import { maskD } from './shapes.js';
 import { paintIsVisible } from './paint.js';
@@ -245,7 +245,10 @@ function frame() {
   ctx.restore();
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawGuides();
   drawOverlay();
+  drawRulers();
+  emit('frame'); // verktygsraden vid markeringen följer med
 }
 
 function drawCropGhost(el, S, px, py) {
@@ -277,11 +280,157 @@ export function selectionFrame() {
   return { cx: b.cx, cy: b.cy, w: b.w, h: b.h, rot: 0, el: null };
 }
 
+/** Markeringens omslutande ruta på skärmen (i arbetsytans koordinater). */
+export function selectionScreenRect() {
+  const f = selectionFrame();
+  if (!f) return null;
+  const pts = frameCornersScreen(f);
+  const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+  return { l: Math.min(...xs), t: Math.min(...ys), r: Math.max(...xs), b: Math.max(...ys) };
+}
+/** Sant medan något flyttas, skalas, roteras eller panoreras. */
+export const isDragging = () => !!drag && drag.type !== 'textsel';
+
 function frameCornersScreen(f, pad = 0) {
   return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => {
     const p = rotatePt(sx * (f.w / 2 + pad / state.zoom), sy * (f.h / 2 + pad / state.zoom), f.rot);
     return docToScreen(f.cx + p.x, f.cy + p.y);
   });
+}
+
+// ---------- Linjaler, hjälplinjer och marginal ----------
+// Linjalerna ligger längs arbetsytans över- och vänsterkant. En hjälplinje
+// dras ut från en linjal och tas bort genom att dras tillbaka dit. Linjerna
+// och marginalen hör till designen (sparas i filen) men ritas bara i editorn.
+const RULER = 22;
+const VIEW_KEY = 'motiv.view';
+export const view = { rulers: true, guides: true };
+try { Object.assign(view, JSON.parse(localStorage.getItem(VIEW_KEY) || '{}')); } catch { /* ignore */ }
+export function setView(key, value) {
+  view[key] = !!value;
+  try { localStorage.setItem(VIEW_KEY, JSON.stringify(view)); } catch { /* ignore */ }
+  emit('view');
+  requestRender();
+}
+/** Enheten som linjaler och marginal visas i: mm för tryckformat, annars px. */
+export const rulerUnit = () => (state.doc.dpi >= 150 ? { name: 'mm', px: state.doc.dpi / 25.4 } : { name: 'px', px: 1 });
+const docGuides = () => (state.doc.guides ||= { x: [], y: [] });
+export const guideCount = () => docGuides().x.length + docGuides().y.length;
+export function clearGuides() {
+  state.doc.guides = { x: [], y: [] };
+  commit();
+  emit('doc');
+}
+
+function drawGuides() {
+  if (!view.guides) return;
+  const d = state.doc, W = viewW(), H = viewH();
+  ctx.save();
+  ctx.lineWidth = 1;
+  if (d.margin > 0 && d.margin * 2 < Math.min(d.width, d.height)) {
+    const a = pageToScreen(d.margin, d.margin), b = pageToScreen(d.width - d.margin, d.height - d.margin);
+    ctx.strokeStyle = 'rgba(236,72,153,0.8)';
+    ctx.strokeRect(Math.round(a.x) + 0.5, Math.round(a.y) + 0.5, Math.round(b.x - a.x), Math.round(b.y - a.y));
+  }
+  const G = docGuides();
+  const line = (axis, v) => {
+    ctx.beginPath();
+    if (axis === 'x') { const x = Math.round(pageToScreen(v, 0).x) + 0.5; ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+    else { const y = Math.round(pageToScreen(0, v).y) + 0.5; ctx.moveTo(0, y); ctx.lineTo(W, y); }
+    ctx.stroke();
+  };
+  ctx.strokeStyle = 'rgba(34,211,238,0.9)';
+  G.x.forEach((v) => line('x', v));
+  G.y.forEach((v) => line('y', v));
+  if (drag?.type === 'guide' && drag.value !== null) { ctx.strokeStyle = '#ffffff'; line(drag.axis, drag.value); }
+  ctx.restore();
+}
+
+function drawRulers() {
+  if (!view.rulers) return;
+  const d = state.doc, W = viewW(), H = viewH(), u = rulerUnit();
+  const ppu = u.px * state.zoom; // skärmpixlar per enhet
+  // Avstånd mellan siffrorna: närmaste jämna steg (1, 2, 5, 10 …) som ger ca 70 px
+  const pow = 10 ** Math.floor(Math.log10(70 / ppu));
+  const lead = [1, 2, 5, 10].find((m) => m * pow * ppu >= 70) || 10;
+  const parts = lead === 2 ? 4 : 5, minor = (lead * pow) / parts;
+  const p0 = pageToScreen(0, 0), p1 = pageToScreen(d.width, d.height);
+  ctx.save();
+  ctx.fillStyle = '#18191f';
+  ctx.fillRect(0, 0, W, RULER); ctx.fillRect(0, 0, RULER, H);
+  ctx.fillStyle = 'rgba(255,255,255,0.07)'; // sidans utsträckning
+  ctx.fillRect(p0.x, 0, p1.x - p0.x, RULER); ctx.fillRect(0, p0.y, RULER, p1.y - p0.y);
+  ctx.strokeStyle = '#5b5c70'; ctx.fillStyle = '#a9aab8'; ctx.lineWidth = 1;
+  ctx.font = '10px "Segoe UI", system-ui, sans-serif'; ctx.textBaseline = 'top';
+  const label = (i) => String(+(i * minor).toFixed(4));
+  ctx.beginPath();
+  for (let i = Math.floor(-state.panX / ppu / minor); ; i++) {
+    const x = Math.round(state.panX + i * minor * ppu) + 0.5;
+    if (x > W) break;
+    if (x < RULER) continue;
+    const major = i % parts === 0;
+    ctx.moveTo(x, RULER); ctx.lineTo(x, RULER - (major ? 10 : 4));
+    if (major) ctx.fillText(label(i), x + 3, 2);
+  }
+  for (let i = Math.floor(-state.panY / ppu / minor); ; i++) {
+    const y = Math.round(state.panY + i * minor * ppu) + 0.5;
+    if (y > H) break;
+    if (y < RULER) continue;
+    const major = i % parts === 0;
+    ctx.moveTo(RULER, y); ctx.lineTo(RULER - (major ? 10 : 4), y);
+    if (major) { ctx.save(); ctx.translate(2, y - 3); ctx.rotate(-Math.PI / 2); ctx.fillText(label(i), 0, 0); ctx.restore(); }
+  }
+  ctx.stroke();
+  // Hörnet visar enheten
+  ctx.fillStyle = '#18191f'; ctx.fillRect(0, 0, RULER, RULER);
+  ctx.fillStyle = '#74758a'; ctx.textAlign = 'center'; ctx.font = '9px "Segoe UI", system-ui, sans-serif';
+  ctx.fillText(u.name, RULER / 2, 6);
+  ctx.strokeStyle = '#2f303b';
+  ctx.beginPath(); ctx.moveTo(0, RULER - 0.5); ctx.lineTo(W, RULER - 0.5); ctx.moveTo(RULER - 0.5, 0); ctx.lineTo(RULER - 0.5, H); ctx.stroke();
+  ctx.restore();
+}
+
+const onRuler = (s) => view.rulers && (s.x < RULER || s.y < RULER);
+/** Hjälplinjen under skärmpunkten: { axis, index } eller null. */
+function guideAt(s) {
+  if (!view.guides) return null;
+  const G = docGuides();
+  for (const axis of ['x', 'y']) {
+    for (let i = G[axis].length - 1; i >= 0; i--) {
+      const p = axis === 'x' ? pageToScreen(G.x[i], 0).x : pageToScreen(0, G.y[i]).y;
+      if (Math.abs((axis === 'x' ? s.x : s.y) - p) <= 4) return { axis, index: i };
+    }
+  }
+  return null;
+}
+/** Börjar dra en hjälplinje: en ny från linjalen (index -1) eller en befintlig. */
+function startGuideDrag(e, s, axis, index) {
+  if (state.editingTextId) finishTextEdit();
+  if (!view.guides) setView('guides', true);
+  if (index >= 0) docGuides()[axis].splice(index, 1);
+  canvas.setPointerCapture(e.pointerId);
+  drag = { type: 'guide', axis, value: null, lastScreen: s, moved: index >= 0 };
+  moveGuide(e, s);
+}
+function moveGuide(e, s) {
+  const d = state.doc, u = rulerUnit(), x = drag.axis === 'x';
+  const size = x ? d.width : d.height;
+  // Släpps linjen på linjalen (eller utanför ytan) tas den bort
+  const pos = x ? s.x : s.y, max = x ? viewW() : viewH();
+  if ((view.rulers && pos < RULER) || pos < 0 || pos > max) { drag.value = null; liveInfo = 'Släpp för att ta bort'; requestRender(); return; }
+  let v = x ? screenToPage(s.x, 0).x : screenToPage(0, s.y).y;
+  if (!e.ctrlKey && !e.metaKey) {
+    v = Math.round(v / u.px) * u.px; // hela mm eller px
+    for (const t of [0, size / 2, size]) if (Math.abs(v - t) * state.zoom <= 6) v = t; // sidans kanter och mitt
+  }
+  drag.value = v;
+  liveInfo = `${+(v / u.px).toFixed(1)} ${u.name}`;
+  requestRender();
+}
+function endGuideDrag() {
+  if (drag.value !== null) docGuides()[drag.axis].push(drag.value);
+  commit();
+  emit('doc');
 }
 
 // ---------- Textredigering: egen markör och markering ----------
@@ -307,7 +456,7 @@ function editingTextAt(s) {
   const p = screenToTextLocal(el, s), pad = 10 / state.zoom;
   return p.x >= -pad && p.y >= -pad && p.x <= el.w + pad && p.y <= el.h + pad ? { el, p } : null;
 }
-const inStylePanel = (t) => !!t?.closest?.('#rightpanel, .popover');
+const inStylePanel = (t) => !!t?.closest?.('#rightpanel, #seltools, .popover');
 const selAnchor = () => (textarea.selectionDirection === 'backward' ? textarea.selectionEnd : textarea.selectionStart);
 const selFocus = () => (textarea.selectionDirection === 'backward' ? textarea.selectionStart : textarea.selectionEnd);
 
@@ -619,8 +768,11 @@ function onHover(e) {
   const hp = f && !state.editingTextId ? hitHandle(f, s.x, s.y) : null;
   if (hp) { canvas.style.cursor = cursorFor(hp, f.rot + scopeRot()); setHover(null); return; }
   if (editingTextAt(s)) { canvas.style.cursor = 'text'; setHover(null); return; }
+  if (onRuler(s)) { canvas.style.cursor = s.x < RULER && s.y < RULER ? 'default' : s.y < RULER ? 'row-resize' : 'col-resize'; setHover(null); return; }
   const hit = hitTest(d.x, d.y);
-  canvas.style.cursor = hit ? (hit.locked ? 'default' : 'move') : 'default';
+  const g = hit ? null : guideAt(s);
+  if (state.stylePainter && hit && !hit.locked) { canvas.style.cursor = 'copy'; setHover(hit.id); return; }
+  canvas.style.cursor = hit ? (hit.locked ? 'default' : 'move') : g ? (g.axis === 'x' ? 'col-resize' : 'row-resize') : 'default';
   setHover(hit ? hit.id : null);
 }
 function setHover(id) { if (id !== hoverId) { hoverId = id; requestRender(); } }
@@ -633,6 +785,11 @@ function onDown(e) {
   const s = screenPt(e);
   if (e.button === 0 && !spaceDown && textEditDown(e, s)) return;
   canvas.focus({ preventScroll: true });
+  if (e.button === 0 && !spaceDown && !state.cropId && onRuler(s)) {
+    hideContextMenu();
+    if (!(s.x < RULER && s.y < RULER)) startGuideDrag(e, s, s.y < RULER ? 'y' : 'x', -1);
+    return;
+  }
   let d = screenToDoc(s.x, s.y);
   hideContextMenu();
 
@@ -677,6 +834,12 @@ function onDown(e) {
   // Klick inne i en multimarkering flyttar hela markeringen
   if (f && state.selection.length > 1 && pointInFrame(f, d.x, d.y) && !e.shiftKey) hit = hit && state.selection.includes(hit.id) ? hit : selected()[0];
 
+  // Penseln: klicket klistrar in den kopierade stilen i stället för att flytta
+  if (state.stylePainter) {
+    setStylePainter(false);
+    if (hit && !hit.locked) { select([hit.id]); if (!pasteStyle()) emit('toast', { msg: 'Stilen passar inte den här typen av element', type: 'info' }); return; }
+  }
+
   if (hit) {
     if (e.shiftKey) {
       const ids = state.selection.includes(hit.id) ? state.selection.filter((i) => i !== hit.id) : [...state.selection, hit.id];
@@ -689,6 +852,9 @@ function onDown(e) {
     drag = { type: 'move', start: snapshotSel(), d0: d, s0: s, lastScreen: s, moved: false, alt: e.altKey };
     return;
   }
+
+  const g = guideAt(s);
+  if (g) { startGuideDrag(e, s, g.axis, g.index); return; }
 
   if (!e.shiftKey) select([]);
   canvas.setPointerCapture(e.pointerId);
@@ -703,6 +869,7 @@ function onMove(e) {
   drag.lastScreen = s;
 
   switch (drag.type) {
+    case 'guide': moveGuide(e, s); return;
     case 'textsel': {
       const el = getById(state.editingTextId);
       if (el && textarea) { const p = screenToTextLocal(el, s); setTextSel(drag.anchor, indexAtPoint(el, p.x, p.y)); }
@@ -739,6 +906,7 @@ function onUp() {
   if (!drag) return;
   const t = drag.type;
   const moved = drag.moved;
+  if (t === 'guide') endGuideDrag();
   drag = null;
   guides = [];
   liveInfo = null;
@@ -754,6 +922,12 @@ function snapTargets(excludeIds) {
   const d = state.doc;
   let xs = [{ v: 0, from: 0, to: d.height }, { v: d.width / 2, from: 0, to: d.height }, { v: d.width, from: 0, to: d.height }];
   let ys = [{ v: 0, from: 0, to: d.width }, { v: d.height / 2, from: 0, to: d.width }, { v: d.height, from: 0, to: d.width }];
+  if (view.guides) {
+    // Hjälplinjer och marginal fäster som sidans kanter
+    const G = docGuides(), m = d.margin > 0 ? [d.margin] : [];
+    for (const v of [...G.x, ...m, ...m.map((k) => d.width - k)]) xs.push({ v, from: 0, to: d.height });
+    for (const v of [...G.y, ...m, ...m.map((k) => d.height - k)]) ys.push({ v, from: 0, to: d.width });
+  }
   if (inGroup()) {
     // Sidans kanter i gruppens koordinater – bara meningsfullt om gruppen inte är roterad/speglad
     const m = groupMatrix();

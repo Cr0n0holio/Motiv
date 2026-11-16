@@ -7,7 +7,7 @@ import { openFontPicker } from './fontpicker.js';
 import { ensureTextFont, weightsFor } from './fonts.js';
 import { BLEND_MODES } from './render.js';
 import * as A from './actions.js';
-import { startCrop, finishCrop, startTextEdit, textRange, styleRange, rangeStyle, focusTextEdit } from './editor.js';
+import { startCrop, finishCrop, startTextEdit, textRange, styleRange, rangeStyle, focusTextEdit, view, setView, rulerUnit, guideCount, clearGuides } from './editor.js';
 import { clearRunProp } from './richtext.js';
 import { FILTER_PRESETS, getProcessed, ensureImage } from './images.js';
 import { MASK_SHAPES, maskD, isOpenShape } from './shapes.js';
@@ -16,6 +16,7 @@ import { pickImages } from './bridge.js';
 import { QR_LEVELS, qrPath } from './qr.js';
 import { openColorPicker } from './colorpicker.js';
 import { toast } from './dialogs.js';
+import { openBulkDialog } from './bulk.js';
 import { addPage, duplicatePage, deletePage, backgroundToAllPages, pageCount, currentPage } from './pages.js';
 import { loadImage, debounce } from './util.js';
 
@@ -32,6 +33,7 @@ export function initProperties(el) {
   on('doc', () => { if (structureChanged()) rebuild(); else B.refresh(); });
   on('doc:live', () => B.refresh());
   on('textsel', () => B.refresh());
+  on('view', () => B.refresh());
   on('fonts', () => B.refresh());
   rebuild();
 }
@@ -53,6 +55,17 @@ function apply(fn, final, { layout = true } = {}) {
   if (final) { commitSoon(); if (structureChanged()) rebuild(); }
 }
 const first = () => selected()[0];
+export { apply as applyToSelection };
+
+/**
+ * Formatering som kan gälla en del av texten: är en del markerad under
+ * redigeringen ändras bara den, annars hela rutan (och delarnas egna värden
+ * för samma egenskap nollställs). Delas med verktygsraden vid markeringen.
+ */
+export function setRunStyle(key, value, f, whole = () => {}) {
+  if (styleRange({ [key]: value })) { apply(() => {}, f); focusTextEdit(); } else apply((e) => { if (e.type !== 'text') return; whole(e); clearRunProp(e, key); }, f);
+}
+export const loadSelectedFonts = () => selected().forEach((e) => { if (e.type === 'text') ensureTextFont(e).then(() => { apply(() => {}, false); }); });
 
 export function rebuild() {
   lastSig = signature();
@@ -93,6 +106,30 @@ function header(el) {
 }
 
 // ---------------- Sida ----------------
+/** Linjaler, hjälplinjer och marginal (stöd i editorn – kommer aldrig med i en export). */
+function guidesPanel() {
+  const check = (label, key) => {
+    const c = h('input', { type: 'checkbox' });
+    c.addEventListener('change', () => setView(key, c.checked));
+    B.add(() => { c.checked = view[key]; });
+    return h('label', { class: 'check' }, c, label);
+  };
+  const u = rulerUnit();
+  const clear = h('button', { class: 'btn full ghost', onclick: clearGuides }, icon('trash'), 'Ta bort alla hjälplinjer');
+  B.add(() => { clear.style.display = guideCount() ? '' : 'none'; });
+  return section('Linjaler och hjälplinjer',
+    check('Visa linjaler', 'rulers'),
+    check('Visa hjälplinjer och marginal', 'guides'),
+    numField(B, {
+      label: 'Marginal', unit: u.name, min: 0, max: Math.floor(Math.min(state.doc.width, state.doc.height) / u.px / 2 - 1), decimals: u.name === 'mm' ? 1 : 0,
+      get: () => (state.doc.margin || 0) / u.px,
+      set: (v, f) => { state.doc.margin = v * u.px; if (v > 0 && !view.guides) setView('guides', true); markDirty(); emit('render'); if (f) commitSoon(); },
+    }),
+    clear,
+    h('div', { class: 'sub-label' }, 'Dra från en linjal för att skapa en hjälplinje. Dra tillbaka den till linjalen för att ta bort den. Element fäster mot hjälplinjer och marginal.'),
+  );
+}
+
 function pagePanel() {
   const d = state.doc;
   const mm = (px) => round((px / d.dpi) * 25.4, 0);
@@ -105,6 +142,7 @@ function pagePanel() {
         h('button', { class: 'btn', title: 'Kopia av den här sidan', onclick: () => duplicatePage() }, icon('copy'), 'Duplicera'),
       ),
       pageCount() > 1 ? h('button', { class: 'btn full danger-ghost', onclick: () => deletePage() }, icon('trash'), 'Ta bort sidan') : null,
+      h('button', { class: 'btn full', title: 'En sida per rad i en CSV- eller Excel-lista, t.ex. namnskyltar eller diplom', onclick: openBulkDialog }, icon('layers'), 'Skapa sidor från en lista…'),
     ),
     section('Storlek',
       h('div', { class: 'info-line' }, h('b', null, `${d.width} × ${d.height} px`), h('span', { class: 'muted' }, ` · ${mm(d.width)} × ${mm(d.height)} mm vid ${d.dpi} dpi`)),
@@ -127,10 +165,11 @@ function pagePanel() {
       pageCount() > 1 ? h('button', { class: 'btn full', title: 'Kopiera den här sidans bakgrund till alla sidor', onclick: backgroundToAllPages }, icon('bg'), 'Använd på alla sidor') : null,
       h('button', { class: 'btn full ghost', onclick: () => emit('open-tab', 'background') }, icon('palette'), 'Fler bakgrunder'),
     ),
+    guidesPanel(),
     palettePanel(),
     section('Kortkommandon',
       h('div', { class: 'shortcuts' },
-        ...[['T', 'Ny text'], ['Dubbelklick', 'Redigera text / beskär bild'], ['Ctrl + D', 'Duplicera'], ['Alt + dra', 'Duplicera och flytta'], ['Shift + dra', 'Lås riktning / proportioner'], ['Ctrl + dra', 'Utan fästlinjer'], ['Mellanslag + dra', 'Panorera'], ['Ctrl + hjul', 'Zooma'], ['Ctrl + G', 'Gruppera'], ['Ctrl + 0', 'Anpassa till fönster'], ['Ctrl + Enter', 'Ny sida'], ['Page Up / Down', 'Byt sida']].map(([k, t]) => h('div', null, h('kbd', null, k), h('span', null, t))),
+        ...[['T', 'Ny text'], ['Dubbelklick', 'Redigera text / beskär bild'], ['Ctrl + D', 'Duplicera'], ['Alt + dra', 'Duplicera och flytta'], ['Shift + dra', 'Lås riktning / proportioner'], ['Ctrl + dra', 'Utan fästlinjer'], ['Mellanslag + dra', 'Panorera'], ['Ctrl + hjul', 'Zooma'], ['Ctrl + G', 'Gruppera'], ['Ctrl + 0', 'Anpassa till fönster'], ['Ctrl + Enter', 'Ny sida'], ['Page Up / Down', 'Byt sida'], ['Shift + R', 'Visa/dölj linjaler']].map(([k, t]) => h('div', null, h('kbd', null, k), h('span', null, t))),
       ),
     ),
   );
@@ -335,13 +374,8 @@ function textPanel(el) {
   B.add(() => { if (document.activeElement !== weightSel) fillWeights(); });
 
   const setT = (fn, f) => apply(fn, f);
-  // Formatering som kan gälla en del av texten: är en del markerad under
-  // redigeringen ändras bara den, annars hela rutan (och delarnas egna värden
-  // för samma egenskap nollställs).
-  const setRun = (key, value, f, whole) => {
-    if (styleRange({ [key]: value })) { apply(() => {}, f); focusTextEdit(); } else apply((e) => { whole(e); clearRunProp(e, key); }, f);
-  };
-  const loadFonts = () => selected().forEach((e) => ensureTextFont(e).then(() => { apply(() => {}, false); }));
+  const setRun = setRunStyle;
+  const loadFonts = loadSelectedFonts;
   const curWeight = () => rangeStyle('weight') ?? (first()?.fontWeight || 400);
 
   return h('div', null,

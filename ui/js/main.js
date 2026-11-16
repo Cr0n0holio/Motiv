@@ -1,16 +1,20 @@
 // Motiv – start och sammankoppling.
 import {
-  state, on, emit, commit, undo, redo, canUndo, canRedo, select, selected, single, newDoc, loadDoc, serializeDoc, parseDoc, getById, allElements,
+  state, on, emit, commit, undo, redo, canUndo, canRedo, select, selected, single, newDoc, loadDoc, serializeDoc, parseDoc, getById, allElements, pageView,
 } from './state.js';
 import { initPageBar, goToPage, addPage, duplicatePage, deletePage, pageCount, currentPage } from './pages.js';
 import { h, blobToDataURL, debounce } from './util.js';
 import { isTauri, invoke, saveText, openText } from './bridge.js';
 import {
-  initEditor, requestRender, fitToScreen, zoomTo, zoomBy, startTextEdit, finishTextEdit, focusTextEdit, startCrop, finishCrop, isTyping,
+  initEditor, requestRender, fitToScreen, view, setView, zoomTo, zoomBy, startTextEdit, finishTextEdit, focusTextEdit, startCrop, finishCrop, isTyping,
   setContextMenuHider, screenToDocFromClient, hitTest, getCanvas, exitGroupEditing, frameAt,
 } from './editor.js';
 import { initProperties, chooseImageFor } from './properties.js';
-import { initLeftPanel, openTab, uploadImages } from './leftpanel.js';
+import { initToolbar } from './toolbar.js';
+import { openBulkDialog } from './bulk.js';
+import { initLeftPanel, openTab, uploadImages, buildTemplate, toPx } from './leftpanel.js';
+import { openStartScreen, startScreenOpen } from './start.js';
+import { renderToCanvas } from './render.js';
 import { initFonts, ensureDocFonts, missingFamilies } from './fonts.js';
 import { icon } from './controls.js';
 import { toast, modal, confirmDialog } from './dialogs.js';
@@ -39,7 +43,7 @@ function buildTopbar() {
   const exportBtn = h('button', { class: 'btn primary', onclick: openExportDialog }, icon('download'), 'Exportera');
 
   bar.append(
-    h('div', { class: 'brand' }, h('span', { class: 'logo' }), h('span', { class: 'brand-name' }, 'Motiv')),
+    h('button', { class: 'brand', title: 'Startsida', onclick: () => showStart() }, h('span', { class: 'logo' }), h('span', { class: 'brand-name' }, 'Motiv')),
     fileBtn, editBtn,
     h('span', { class: 'sep' }),
     undoBtn, redoBtn,
@@ -49,6 +53,7 @@ function buildTopbar() {
   );
 
   fileBtn.addEventListener('click', () => showMenu(fileBtn, [
+    ['Startsida…', '', () => showStart()],
     ['Ny design', 'Ctrl+N', newDesign],
     ['Öppna…', 'Ctrl+O', openProject],
     ...recentMenuItems(),
@@ -57,6 +62,7 @@ function buildTopbar() {
     ['Spara som…', 'Ctrl+Shift+S', () => saveProject(true)],
     null,
     ['Ladda upp bilder…', 'Ctrl+I', uploadImages],
+    ['Skapa sidor från en lista…', '', () => { finishTextEdit(); openBulkDialog(); }],
     ['Exportera…', 'Ctrl+E', openExportDialog],
     null,
     ['Sök efter uppdateringar…', '', () => checkForUpdates(true), !isTauri],
@@ -128,6 +134,7 @@ function contextMenu(e) {
     items.push(['Kopiera', 'Ctrl+C', A.copySelection], ['Klipp ut', 'Ctrl+X', A.cutSelection]);
   }
   items.push(['Klistra in', 'Ctrl+V', A.pasteInternal, !state.clipboard]);
+  if (els.length) items.push(null, ['Kopiera stil', 'Ctrl+Alt+C', A.copyStyle, !el], ['Klistra in stil', 'Ctrl+Alt+V', pasteStyleHere, !state.styleClip], null);
   if (els.length) {
     items.push(['Duplicera', 'Ctrl+D', () => A.duplicateSelection()], ['Ta bort', 'Delete', A.deleteSelection], null,
       ['Längst fram', 'Ctrl+Shift+]', () => A.arrange('front')], ['Framåt', 'Ctrl+]', () => A.arrange('forward')],
@@ -137,7 +144,9 @@ function contextMenu(e) {
     if (els.some((x) => x.type === 'group')) items.push(['Dela upp grupp', 'Ctrl+Shift+G', A.ungroupSelection]);
     items.push([els.every((x) => x.locked) ? 'Lås upp' : 'Lås', 'Ctrl+L', A.toggleLock]);
   } else {
-    items.push(null, ['Markera allt', 'Ctrl+A', A.selectAll], ['Anpassa till fönster', 'Ctrl+0', fitToScreen]);
+    items.push(null, ['Markera allt', 'Ctrl+A', A.selectAll], ['Anpassa till fönster', 'Ctrl+0', fitToScreen], null,
+      [view.rulers ? 'Dölj linjaler' : 'Visa linjaler', 'Shift+R', () => setView('rulers', !view.rulers)],
+      [view.guides ? 'Dölj hjälplinjer' : 'Visa hjälplinjer', '', () => setView('guides', !view.guides)]);
   }
   showMenu({ x: e.clientX, y: e.clientY }, items);
 }
@@ -214,6 +223,25 @@ function setRecentFiles(list) {
 function rememberFile(path) {
   if (!isTauri || !path) return;
   setRecentFiles([path, ...recentFiles().filter((p) => p !== path)]);
+  rememberThumb(path);
+}
+
+// Små förhandsbilder av de senaste designerna, för startskärmen
+const THUMBS_KEY = 'motiv.recentThumbs';
+function recentThumbs() {
+  try { return JSON.parse(localStorage.getItem(THUMBS_KEY) || '{}'); } catch { return {}; }
+}
+function rememberThumb(path) {
+  try {
+    const page = pageView(state.doc, 0);
+    const c = renderToCanvas(page, 260 / Math.max(page.width, page.height), { background: '#ffffff', placeholders: true });
+    const all = recentThumbs();
+    all[path] = c.toDataURL('image/webp', 0.8);
+    // Bara filer som finns kvar i listan behåller sin bild
+    const keep = new Set(recentFiles());
+    for (const k of Object.keys(all)) if (!keep.has(k)) delete all[k];
+    localStorage.setItem(THUMBS_KEY, JSON.stringify(all));
+  } catch { /* t.ex. fullt lagringsutrymme – bilden är bara en bekvämlighet */ }
 }
 function recentMenuItems() {
   const list = isTauri ? recentFiles() : [];
@@ -232,18 +260,69 @@ async function openRecent(path) {
   } catch {
     setRecentFiles(recentFiles().filter((p) => p !== path));
     toast(`Kunde inte öppna ${baseName(path)} – filen kan ha flyttats eller tagits bort. Den togs bort ur listan.`, 'error', { timeout: 7000 });
-    return;
+    return false;
   }
-  try { await loadProjectText(text, baseName(path), path); } catch (e) { toast(`Kunde inte öppna filen: ${e.message || e}`, 'error'); }
+  try { await loadProjectText(text, baseName(path), path); return true; } catch (e) { toast(`Kunde inte öppna filen: ${e.message || e}`, 'error'); return false; }
 }
 
 async function openProject() {
-  if (!(await confirmDiscard())) return;
+  if (!(await confirmDiscard())) return false;
   try {
     const f = await openText(OPEN_FILTER);
-    if (!f) return;
+    if (!f) return false;
     await loadProjectText(f.text, f.name, f.path);
-  } catch (e) { toast(`Kunde inte öppna filen: ${e.message || e}`, 'error'); }
+    return true;
+  } catch (e) { toast(`Kunde inte öppna filen: ${e.message || e}`, 'error'); return false; }
+}
+
+// ---------------- Startskärm ----------------
+/** Tom design i ett visst format (mm räknas om i 300 dpi, px i 72). */
+async function createDesign(w, hh, unit) {
+  if (!(await confirmDiscard())) return false;
+  const dpi = unit === 'mm' ? 300 : 72;
+  loadDoc(newDoc(Math.round(toPx(w, unit, dpi)), Math.round(toPx(hh, unit, dpi)), dpi), { fileName: 'Namnlös design', filePath: null });
+  clearImageCaches();
+  return true;
+}
+async function startFromTemplate(t) {
+  if (!(await confirmDiscard())) return false;
+  loadDoc(await buildTemplate(t), { fileName: t.name, filePath: null });
+  clearImageCaches();
+  emit('doc');
+  return true;
+}
+async function readAutosave() {
+  let raw = null;
+  try { raw = isTauri ? await invoke('autosave_read') : localStorage.getItem('motiv.autosave'); } catch { /* ignore */ }
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+function clearAutosave() {
+  if (isTauri) invoke('autosave_clear').catch(() => {}); else localStorage.removeItem('motiv.autosave');
+}
+const restoreAutosave = async (o) => { await loadProjectText(o.data, o.name, o.path); state.dirty = true; emit('dirty'); };
+
+/** saved: autosparad design att erbjuda (bara vid appstart). */
+function showStart(saved = null) {
+  finishTextEdit();
+  hideMenu();
+  let handled = !saved;
+  const thumbs = recentThumbs();
+  openStartScreen({
+    recent: (isTauri ? recentFiles() : []).map((path) => ({ path, name: baseName(path).replace(PROJECT_EXT, ''), thumb: thumbs[path] })),
+    autosave: saved && {
+      name: saved.name,
+      onRestore: async () => { handled = true; await restoreAutosave(saved); },
+      onDiscard: () => { handled = true; clearAutosave(); },
+    },
+    onNew: createDesign,
+    onCustom: () => { openTab('format', true); },
+    onOpen: openProject,
+    onOpenRecent: openRecent,
+    onTemplate: startFromTemplate,
+    // Stängd utan att ta ställning: erbjudandet finns kvar en stund som en notis
+    onClose: () => { if (!handled) offerRestore(saved); },
+  });
 }
 
 async function loadProjectText(text, name, path) {
@@ -339,21 +418,16 @@ const autosave = debounce(async () => {
   } catch { /* t.ex. för stort för localStorage */ }
 }, 4000);
 
-async function offerRestore() {
-  let raw = null;
-  try { raw = isTauri ? await invoke('autosave_read') : localStorage.getItem('motiv.autosave'); } catch { /* ignore */ }
-  if (!raw) return;
-  let o;
-  try { o = JSON.parse(raw); } catch { return; }
+function offerRestore(o) {
   toast(`Det finns en autosparad version av "${o.name}".`, 'info', {
     timeout: 15000,
-    action: { label: 'Återställ', onClick: async () => { await loadProjectText(o.data, o.name, o.path); state.dirty = true; emit('dirty'); } },
+    action: { label: 'Återställ', onClick: () => restoreAutosave(o) },
   });
 }
 
 // ---------------- Tangentbord ----------------
 function onKey(e) {
-  if (isTyping(e)) return;
+  if (isTyping(e) || startScreenOpen()) return;
   const ctrl = e.ctrlKey || e.metaKey;
   const k = e.key;
   // Text redigeras men fokus ligger i panelen: tangenterna hör till texten
@@ -363,6 +437,11 @@ function onKey(e) {
   if (state.cropId) {
     if (k === 'Enter') { e.preventDefault(); finishCrop(true); return; }
     if (k === 'Escape') { e.preventDefault(); finishCrop(false); return; }
+  }
+  if (ctrl && e.altKey && (lower === 'c' || lower === 'v')) {
+    e.preventDefault();
+    if (lower === 'c') { if (A.copyStyle()) toast('Stilen kopierad', 'ok'); } else pasteStyleHere();
+    return;
   }
   if (ctrl) {
     const map = {
@@ -385,6 +464,7 @@ function onKey(e) {
     case 'PageDown': e.preventDefault(); goToPage(currentPage() + 1); break;
     case 'Escape':
       closeColorPicker(); closeFontPicker(); hideMenu();
+      if (state.stylePainter) { A.setStylePainter(false); break; }
       // Esc lämnar först en öppnad grupp (gruppen blir markerad), sedan avmarkeras allt
       if (state.doc.groupPath.length) exitGroupEditing(); else select([]);
       break;
@@ -398,10 +478,15 @@ function onKey(e) {
       break;
     }
     case 't': case 'T': e.preventDefault(); { const el = A.addText('heading'); startTextEdit(el, true); } break;
-    case 'r': case 'R': A.addShape('rect'); break;
+    case 'r': case 'R': if (e.shiftKey) { e.preventDefault(); setView('rulers', !view.rulers); } else A.addShape('rect'); break;
     case 'o': case 'O': A.addShape('ellipse'); break;
     case 'l': case 'L': A.addShape('line'); break;
   }
+}
+
+function pasteStyleHere() {
+  if (!state.styleClip) { toast('Kopiera en stil först (Ctrl+Alt+C)', 'info'); return; }
+  if (!A.pasteStyle()) toast('Stilen passar inte den här typen av element', 'info');
 }
 
 function toggleTextProp(p) {
@@ -486,6 +571,7 @@ async function boot() {
   initEditor($('#stage'));
   initLeftPanel($('#rail'), $('#leftpanel'));
   initProperties($('#rightpanel'));
+  initToolbar($('#stage'));
   initPageBar($('#pagebar'), showMenu);
   buildZoomBar();
   buildGroupBar();
@@ -508,8 +594,8 @@ async function boot() {
   loadDoc(d, { fileName: 'Namnlös design', filePath: null });
   updateTitle();
   if (!isTauri) document.body.classList.add('browser-mode');
+  showStart(await readAutosave());
   await initFonts();
-  offerRestore();
   initUpdates({ save: () => saveProject(false) });
 }
 

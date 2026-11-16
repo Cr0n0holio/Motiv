@@ -60,6 +60,9 @@ Skriptet installerar systempaket, Rust och Tauri CLI vid behov och lägger
 - **Ikoner**: drygt 170 sökbara ikoner (svenska och engelska sökord) från
   [Lucide](https://lucide.dev), i valfri färg och linjetjocklek
 - **QR-koder** för länkar och text (även å, ä, ö), som vektor i alla exportformat
+- **Verktygsrad vid markeringen** med de vanligaste valen: färg, textstorlek,
+  fet/kursiv, justering, beskär, byt bild, duplicera, lås och ta bort
+- **Kopiera stil** mellan element med penseln i verktygsraden eller Ctrl+Alt+C / Ctrl+Alt+V
 - Lager: dra för att ändra ordning, dölj, lås, byt namn
 - Opacitet och 16 blandningslägen
 - **Färgpalett** för designen: spara färger, hämta dem från designen, och byt en
@@ -67,10 +70,18 @@ Skriptet installerar systempaket, Rust och Tauri CLI vid behov och lägger
 - Gruppera, justera, fördela, spegla, rotera, fästlinjer (smart snapping)
 - Redigera inuti grupper: dubbelklicka på en grupp för att ändra en del utan att dela upp den (Esc eller Klar för att lämna)
 - Ångra/gör om (150 steg), kopiera/klistra, Alt+dra för att duplicera
+- **Linjaler, hjälplinjer och marginal**: dra ut hjälplinjer från linjalerna (mm för
+  tryckformat, annars px), ställ in en marginal – element fäster mot dem, och
+  inget av det kommer med i en export
 - Format för tryck (A-serien, affischer) och sociala medier, eller egen storlek
   i px/mm/cm/tum med valfri dpi
 - **Flera sidor** per design: sidremsa med förhandsbilder, lägg till, duplicera,
   ta bort och dra för att ändra ordning; samma bakgrund på alla sidor med ett klick
+- **Startsida** när appen öppnas: nya designer i vanliga format, senaste designer
+  med förhandsbild och alla mallar (även via logotypen eller Arkiv → Startsida)
+- **Sidor från en lista**: läs in en CSV- eller Excel-fil (eller klistra in från Excel) och
+  få en sida per rad – namnskyltar, diplom, prislappar. Koppla kolumner till texter,
+  QR-koder och bilder, eller skriv `{Kolumnnamn}` direkt i en text. För lång text krymps.
 - 26 startmallar i fem kategorier, som kan ersätta designen eller läggas till som ny sida
 
 **Export**
@@ -93,7 +104,9 @@ Skriptet installerar systempaket, Rust och Tauri CLI vid behov och lägger
 | Ctrl+G / Ctrl+Shift+G | Gruppera / Dela upp |
 | Ctrl+] / Ctrl+[ | Framåt / Bakåt (med Shift: längst fram/bak) |
 | Ctrl+B / I / U | Fet / Kursiv / Understruken (hela texten eller den markerade delen) |
+| Ctrl+Alt+C / Ctrl+Alt+V | Kopiera stil / Klistra in stil |
 | Ctrl+L | Lås/lås upp |
+| Shift+R | Visa/dölj linjaler |
 | T / R / O / L | Ny text / rektangel / ellips / linje |
 | Pilar (Shift = 10×) | Flytta markerat |
 | Ctrl+Enter | Ny sida |
@@ -112,6 +125,9 @@ ui/                    Gränssnittet (laddas direkt av Tauri, inget byggsteg)
   css/app.css
   js/
     main.js            Start, menyer, kortkommandon, fil, autosparning
+    start.js           Startsidan
+    bulk.js            Sidor från en lista (massproduktion)
+    tabledata.js       Läser CSV och Excel-filer (.xlsx)
     pages.js           Sidor: sidremsan och sidåtgärder
     editor.js          Canvas: rendering, markering, transformering, text/krop
     state.js           Dokumentmodell, händelser, ångra/gör om
@@ -124,6 +140,7 @@ ui/                    Gränssnittet (laddas direkt av Tauri, inget byggsteg)
     paint.js           Färger och gradienter
     fonts.js           Fonthantering
     properties.js      Högerpanelen
+    toolbar.js         Verktygsraden vid markeringen
     leftpanel.js       Vänsterpanelen (format, text, element, bilder, bakgrund, lager)
     templates.js       Startmallarna
     colorpicker.js / fontpicker.js / controls.js / dialogs.js / exporter.js / bgremoval.js

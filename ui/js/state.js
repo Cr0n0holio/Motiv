@@ -64,7 +64,7 @@ export function groupMatrix(doc = state.doc) {
 }
 
 export function newDoc(width = 2480, height = 3508, dpi = 300) {
-  return attachPageAccessors({ version: 2, width, height, dpi, pages: [newPage()], palette: [], assets: {} });
+  return attachPageAccessors({ version: 2, width, height, dpi, pages: [newPage()], palette: [], guides: { x: [], y: [] }, margin: 0, assets: {} });
 }
 
 /** En sida som ett fristående "dokument" för rendering och export. */
@@ -88,6 +88,8 @@ export const state = {
   filePath: null,
   dirty: false,
   clipboard: null,
+  styleClip: null,      // kopierad stil: { type, style }
+  stylePainter: false,  // nästa klick på ett element klistrar in stilen
   recentColors: [],
 };
 
@@ -227,7 +229,7 @@ let lastSnap = null;
 
 function snapshot() {
   const d = state.doc;
-  return JSON.stringify({ width: d.width, height: d.height, dpi: d.dpi, palette: d.palette, pages: d.pages });
+  return JSON.stringify({ width: d.width, height: d.height, dpi: d.dpi, palette: d.palette, guides: d.guides, margin: d.margin, pages: d.pages });
 }
 
 export function resetHistory() {
@@ -351,6 +353,10 @@ export function parseDoc(text) {
   if (!d.pages.length) d.pages.push(newPage());
   d.version = 2;
   d.palette ||= [];
+  // Hjälplinjer (sidans koordinater) och marginal: bara stöd i editorn, aldrig med i en export
+  const nums = (a) => (Array.isArray(a) ? a.filter((v) => Number.isFinite(v)) : []);
+  d.guides = { x: nums(d.guides?.x), y: nums(d.guides?.y) };
+  d.margin = Number.isFinite(d.margin) && d.margin > 0 ? d.margin : 0;
   d.assets ||= {};
   d.dpi ||= 300;
   return attachPageAccessors(d);

@@ -46,6 +46,19 @@ export function addPage(after = currentPage(), page = newPage()) {
   changed(after + 1);
 }
 
+/**
+ * Lägger in flera sidor på en gång efter sida `after` (ett ångringssteg).
+ * Med replace tas sidan `after` bort, så att de nya sidorna ersätter den.
+ */
+export function insertPages(after, newPages, { replace = false } = {}) {
+  if (!newPages.length) return;
+  exitGroup({ reselect: false });
+  finishTextEdit();
+  finishCrop(true);
+  pages().splice(replace ? after : after + 1, replace ? 1 : 0, ...newPages);
+  changed(replace ? after : after + 1);
+}
+
 export function duplicatePage(i = currentPage()) {
   exitGroup({ reselect: false });
   finishTextEdit();

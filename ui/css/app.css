@@ -405,3 +405,73 @@ input[type="number"]::-webkit-inner-spin-button { opacity: .4; }
 .qr-input { width: 100%; resize: vertical; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; color: var(--text); outline: none; font: inherit; }
 .qr-input:focus { border-color: var(--accent); }
 .error-text { color: #fb7185 !important; }
+
+/* ---------- Startskärm ---------- */
+.start-screen { position: fixed; inset: 0; z-index: 150; background: var(--bg); overflow-y: auto; animation: fade .15s ease; }
+.st-inner { max-width: 1120px; margin: 0 auto; padding: 36px 32px 60px; display: flex; flex-direction: column; gap: 30px; }
+.st-head { display: flex; align-items: center; gap: 14px; }
+.st-head .logo { width: 44px; height: 44px; border-radius: 13px; flex: none; }
+.st-head h1 { margin: 0; font-size: 26px; letter-spacing: -.2px; }
+.st-head p { margin: 3px 0 0; }
+.st-head .grow, .st-banner .grow { flex: 1; }
+.start-screen h2 { margin: 0 0 12px; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-3); font-weight: 650; }
+.st-row { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; flex-wrap: wrap; }
+.st-row h2 { margin: 0; }
+.st-banner { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-radius: 14px; background: rgba(139,92,246,.12); border: 1px solid rgba(139,92,246,.45); }
+.st-grid { display: grid; gap: 12px; }
+.st-formats { grid-template-columns: repeat(9, minmax(0, 1fr)); }
+.st-format .st-name { white-space: normal; line-height: 1.25; }
+@media (max-width: 1040px) { .st-formats { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); } }
+.st-recents { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.st-templates { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px 14px; }
+.st-card { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 14px 10px 12px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); color: var(--text); text-align: center; transition: border-color .12s, background .12s, transform .12s; }
+.st-card:hover { border-color: var(--accent); background: var(--panel-2); transform: translateY(-2px); }
+.st-page-box { height: 62px; display: flex; align-items: center; justify-content: center; margin-bottom: 6px; }
+.st-page { display: flex; align-items: center; justify-content: center; background: #fff; border-radius: 3px; box-shadow: 0 3px 10px rgba(0,0,0,.4); }
+.st-page.st-custom { width: 46px; height: 54px; background: none; border: 1.5px dashed var(--text-3); box-shadow: none; color: var(--text-2); }
+.st-page.st-custom .ic { width: 18px; height: 18px; }
+.st-name { font-size: 13px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-sub { font-size: 11px; color: var(--text-3); }
+.st-thumb { width: 100%; aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center; border-radius: 9px; background: var(--panel-2); margin-bottom: 6px; color: var(--text-3); overflow: hidden; }
+.st-thumb img { max-width: 88%; max-height: 88%; border-radius: 3px; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+.st-thumb .ic { width: 28px; height: 28px; }
+.st-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.st-chip { padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line-2); background: none; color: var(--text-2); font-size: 12px; font-weight: 550; }
+.st-chip:hover { color: var(--text); }
+.st-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.brand { background: none; border: 0; color: inherit; padding: 4px 6px; margin-left: -6px; border-radius: 9px; }
+button.brand:hover { background: var(--panel-2); }
+
+/* ---------- Verktygsrad vid markeringen ---------- */
+#seltools { position: absolute; top: 0; left: 0; z-index: 5; display: none; align-items: center; gap: 4px; padding: 4px 6px; background: rgba(29,30,37,.97); border: 1px solid var(--line-2); border-radius: 12px; box-shadow: 0 10px 28px rgba(0,0,0,.45); white-space: nowrap; }
+#seltools.on { display: flex; }
+#seltools .icon-btn { width: 30px; height: 30px; }
+#seltools .icon-btn.active { color: #fbbf24; }
+#seltools .tog { min-width: 30px; height: 30px; padding: 0 6px; border-color: transparent; background: none; }
+#seltools .tog.active { background: rgba(139,92,246,.25); }
+#seltools .seg { border: 0; background: none; padding: 0; }
+#seltools .swatch { margin: 0 3px; flex: none; }
+#seltools .st-sep { width: 1px; height: 20px; background: var(--line-2); margin: 0 3px; }
+.st-stepper { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 8px; }
+.st-stepper .icon-btn { width: 26px; height: 28px; }
+.st-size { width: 40px; height: 28px; border: 0; background: none; color: var(--text); text-align: center; font-size: 12.5px; font-weight: 600; outline: none; }
+#seltools .icon-btn.armed { background: var(--accent); color: #fff; }
+
+/* ---------- Massproduktion ---------- */
+.bulk { display: grid !important; grid-template-columns: minmax(0, 1fr) 440px; gap: 22px !important; }
+.bulk-left, .bulk-right { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.bulk h4 { margin: 8px 0 0; font-size: 13px; }
+.bulk h4:first-child { margin-top: 0; }
+.bulk p { margin: 0; }
+.bulk-paste { height: 64px; resize: vertical; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; outline: none; font-size: 12px; white-space: pre; }
+.bulk-paste:focus { border-color: var(--accent); }
+.bulk-map { display: flex; flex-direction: column; gap: 6px; }
+.bulk-row { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 10px; align-items: center; font-size: 12px; color: var(--text-2); }
+.bulk-field { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bulk-field b { color: var(--text); font-weight: 600; }
+.bulk-right { align-items: center; }
+.bulk-canvas { width: 100%; height: 430px; display: flex; align-items: center; justify-content: center; background: var(--panel-2); border-radius: 12px; }
+.bulk-canvas canvas { max-width: 94%; max-height: 94%; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+.bulk-nav { display: flex; align-items: center; gap: 10px; }
+.bulk-nav .icon-btn { font-size: 20px; }
+.bulk-warn { color: #fbbf24; text-align: center; min-height: 16px; }

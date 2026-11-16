@@ -76,7 +76,15 @@ export const SIZE_PRESETS = [
   ]],
 ];
 
-function toPx(v, unit, dpi) { return unit === 'mm' ? (v / 25.4) * dpi : unit === 'cm' ? (v / 2.54) * dpi : unit === 'in' ? v * dpi : v; }
+/** Bygger en mall med fonterna laddade och texten utlagd. */
+export async function buildTemplate(t) {
+  const tdoc = t.build();
+  await ensureDocFonts(allElements(tdoc));
+  A.relayoutAllText(allElements(tdoc));
+  return tdoc;
+}
+
+export function toPx(v, unit, dpi) { return unit === 'mm' ? (v / 25.4) * dpi : unit === 'cm' ? (v / 2.54) * dpi : unit === 'in' ? v * dpi : v; }
 
 builders.format = () => {
   const d = state.doc;
@@ -122,9 +130,7 @@ builders.format = () => {
   const useTemplate = async (t) => {
     const how = allElements().length ? await askHow(t) : 'replace';
     if (!how) return;
-    const tdoc = t.build();
-    await ensureDocFonts(allElements(tdoc));
-    A.relayoutAllText(allElements(tdoc));
+    const tdoc = await buildTemplate(t);
     if (how === 'replace') {
       loadDoc(tdoc, { fileName: t.name, filePath: null });
       emit('doc');
@@ -475,7 +481,7 @@ builders.layers = (refresh = false) => {
  * Förhandsbilden är en färdigrenderad bild (ui/img/mallar, skapas med
  * verktyg/mallbilder.py). Saknas den visas en enkel färgruta med text.
  */
-function templateThumb(t) {
+export function templateThumb(t) {
   const fallback = h('span', { class: 'tpl-t', style: t.tstyle || {} }, t.short);
   const thumb = h('span', { class: 'tpl-thumb', style: { background: t.thumb } });
   const img = h('img', { src: `img/mallar/${templateSlug(t)}.webp`, alt: '', loading: 'lazy', draggable: false });

@@ -1,6 +1,6 @@
 // Brygga mot Rust (Tauri). Har reservlösningar så att gränssnittet även
 // går att köra i en vanlig webbläsare under utveckling.
-import { blobToDataURL, dataURLToBase64, mimeFromExt } from './util.js';
+import { blobToDataURL, dataURLToBase64, mimeFromExt, base64ToArrayBuffer } from './util.js';
 
 const T = window.__TAURI__;
 export const isTauri = !!(T && T.core && T.core.invoke);
@@ -114,4 +114,18 @@ export async function pickImages() {
 /** Väljer fontfiler (endast skrivbordsappen). */
 export async function pickFontPaths() {
   return invoke('open_file_dialog', { filters: [{ name: 'Fonter', extensions: ['ttf', 'otf'] }], multiple: true });
+}
+
+/** Väljer en lista (CSV eller Excel). Returnerar { name, path, bytes } eller null. */
+export async function pickTableFile() {
+  const extensions = ['csv', 'xlsx', 'txt', 'tsv'];
+  if (isTauri) {
+    const [path] = await invoke('open_file_dialog', { filters: [{ name: 'Listor (CSV, Excel)', extensions }], multiple: false });
+    if (!path) return null;
+    const f = await invoke('read_binary_file', { path });
+    return { name: f.name, path, bytes: new Uint8Array(base64ToArrayBuffer(f.data)) };
+  }
+  const [file] = await browserPick(extensions.map((e) => '.' + e).join(','), false);
+  if (!file) return null;
+  return { name: file.name, path: null, bytes: new Uint8Array(await file.arrayBuffer()) };
 }
